@@ -92,7 +92,13 @@
 #ifdef ENABLE_HTTP3
 #  include <ngtcp2/ngtcp2.h>
 #  include <nghttp3/nghttp3.h>
-#endif // ENABLE_HTTP3
+#  ifdef HAVE_LIBNGTCP2_CRYPTO_QUICTLS
+#    include <ngtcp2/ngtcp2_crypto_quictls.h>
+#  endif // HAVE_LIBNGTCP2_CRYPTO_QUICTLS
+#  ifdef HAVE_LIBNGTCP2_CRYPTO_OSSL
+#    include <ngtcp2/ngtcp2_crypto_ossl.h>
+#  endif // HAVE_LIBNGTCP2_CRYPTO_OSSL
+#endif   // ENABLE_HTTP3
 
 #include "shrpx_config.h"
 #include "shrpx_tls.h"
@@ -4084,6 +4090,21 @@ void reload_config() {
 } // namespace
 
 int main(int argc, char **argv) {
+#ifdef ENABLE_HTTP3
+#  ifdef HAVE_LIBNGTCP2_CRYPTO_OSSL
+  if (ngtcp2_crypto_ossl_init() != 0) {
+    std::cerr << "ngtcp2_crypto_ossl_init failed" << std::endl;
+    exit(EXIT_FAILURE);
+  }
+#  endif // defined(HAVE_LIBNGTCP2_CRYPTO_OSSL)
+#  ifdef HAVE_LIBNGTCP2_CRYPTO_QUICTLS
+  if (ngtcp2_crypto_quictls_init() != 0) {
+    std::cerr << "ngtcp2_crypto_quictls_init failed" << std::endl;
+    exit(EXIT_FAILURE);
+  }
+#  endif // defined(HAVE_LIBNGTCP2_CRYPTO_QUICTLS)
+#endif   // defined(ENABLE_HTTP3)
+
   int rv;
   std::array<char, STRERROR_BUFSIZE> errbuf;
 
