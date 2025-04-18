@@ -223,10 +223,6 @@ jobs:
         http3: [http3, no-http3]
         openssl: [openssl1, openssl3, boringssl, awslc, wolfssl]
         exclude:
-        - os: macos-14
-          openssl: openssl3
-        - os: macos-15
-          openssl: openssl3
         - http3: no-http3
           openssl: openssl3
         - os: macos-14
