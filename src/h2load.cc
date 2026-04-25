@@ -3694,9 +3694,9 @@ int main(int argc, char **argv) {
     }
 #  endif // defined(HAVE_LIBNGTCP2_CRYPTO_WOLFSSL)
 #endif   // defined(ENABLE_HTTP3)
-  } else if (nghttp2::tls::ssl_ctx_set_proto_versions(
+  } else if (!nghttp2::tls::ssl_ctx_set_proto_versions(
                ssl_ctx, nghttp2::tls::NGHTTP2_TLS_MIN_VERSION,
-               nghttp2::tls::NGHTTP2_TLS_MAX_VERSION) != 0) {
+               nghttp2::tls::NGHTTP2_TLS_MAX_VERSION)) {
     std::cerr << "Could not set TLS versions" << std::endl;
     exit(EXIT_FAILURE);
   }
@@ -3733,7 +3733,7 @@ int main(int argc, char **argv) {
   SSL_CTX_set_alpn_protos(ssl_ctx, proto_list.data(),
                           static_cast<uint32_t>(proto_list.size()));
 
-  if (tls::setup_keylog_callback(ssl_ctx) != 0) {
+  if (!tls::setup_keylog_callback(ssl_ctx)) {
     std::cerr << "Failed to setup keylog" << std::endl;
 
     exit(EXIT_FAILURE);
