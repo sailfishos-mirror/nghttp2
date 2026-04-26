@@ -137,7 +137,7 @@ public:
 
   std::expected<void, Error> resume_data(Http2DownstreamConnection *dconn);
 
-  int connection_made();
+  std::expected<void, Error> connection_made();
 
   std::expected<void, Error> do_read();
   std::expected<void, Error> do_write();

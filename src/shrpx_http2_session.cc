@@ -1633,7 +1633,7 @@ nghttp2_session_callbacks *create_http2_downstream_callbacks() {
   return callbacks;
 }
 
-int Http2Session::connection_made() {
+std::expected<void, Error> Http2Session::connection_made() {
   int rv;
 
   state_ = Http2SessionState::CONNECTED;
@@ -1649,7 +1649,7 @@ int Http2Session::connection_made() {
 
     if (!next_proto) {
       downstream_failure(addr_, raddr_);
-      return -1;
+      return std::unexpected{Error::ALPN};
     }
 
     auto proto = as_string_view(next_proto, next_proto_len);
@@ -1658,7 +1658,7 @@ int Http2Session::connection_made() {
     }
     if (!util::check_h2_is_selected(proto)) {
       downstream_failure(addr_, raddr_);
-      return -1;
+      return std::unexpected{Error::ALPN};
     }
   }
 
@@ -1669,7 +1669,7 @@ int Http2Session::connection_made() {
                                    this, http2conf.downstream.option);
 
   if (rv != 0) {
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   std::array<nghttp2_settings_entry, 5> entry;
@@ -1701,14 +1701,14 @@ int Http2Session::connection_made() {
   rv =
     nghttp2_submit_settings(session_, NGHTTP2_FLAG_NONE, entry.data(), nentry);
   if (rv != 0) {
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   rv = nghttp2_session_set_local_window_size(
     session_, NGHTTP2_FLAG_NONE, 0,
     http2conf.downstream.connection_window_size);
   if (rv != 0) {
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   reset_connection_check_timer(CONNCHK_TIMEOUT);
@@ -1716,7 +1716,7 @@ int Http2Session::connection_made() {
   submit_pending_requests();
 
   signal_write();
-  return 0;
+  return {};
 }
 
 std::expected<void, Error> Http2Session::do_read() { return read_(*this); }
@@ -1973,9 +1973,9 @@ std::expected<void, Error> Http2Session::connected() {
     return do_write();
   }
 
-  if (connection_made() != 0) {
+  if (auto rv = connection_made(); !rv) {
     state_ = Http2SessionState::CONNECT_FAILING;
-    return std::unexpected{Error::INTERNAL};
+    return rv;
   }
 
   return {};
@@ -2075,9 +2075,9 @@ std::expected<void, Error> Http2Session::tls_handshake() {
   read_ = &Http2Session::read_tls;
   write_ = &Http2Session::write_tls;
 
-  if (connection_made() != 0) {
+  if (auto rv = connection_made(); !rv) {
     state_ = Http2SessionState::CONNECT_FAILING;
-    return std::unexpected{Error::INTERNAL};
+    return rv;
   }
 
   return {};
