@@ -122,16 +122,18 @@ public:
 
   void remove_stream_data(StreamData *sd);
 
-  int submit_request(Http2DownstreamConnection *dconn, const nghttp2_nv *nva,
-                     size_t nvlen, const nghttp2_data_provider2 *data_prd);
+  std::expected<void, Error>
+  submit_request(Http2DownstreamConnection *dconn, const nghttp2_nv *nva,
+                 size_t nvlen, const nghttp2_data_provider2 *data_prd);
 
-  int submit_rst_stream(int32_t stream_id, uint32_t error_code);
+  std::expected<void, Error> submit_rst_stream(int32_t stream_id,
+                                               uint32_t error_code);
 
   int terminate_session(uint32_t error_code);
 
   nghttp2_session *get_session() const;
 
-  int resume_data(Http2DownstreamConnection *dconn);
+  std::expected<void, Error> resume_data(Http2DownstreamConnection *dconn);
 
   int connection_made();
 
@@ -175,7 +177,7 @@ public:
 
   SSL *get_ssl() const;
 
-  int consume(int32_t stream_id, size_t len);
+  std::expected<void, Error> consume(int32_t stream_id, size_t len);
 
   // Returns true if request can be issued on downstream connection.
   bool can_push_request(const Downstream *downstream) const;

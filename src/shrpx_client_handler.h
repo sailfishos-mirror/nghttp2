@@ -28,6 +28,7 @@
 #include "shrpx.h"
 
 #include <memory>
+#include <expected>
 
 #include <ev.h>
 
@@ -45,6 +46,7 @@
 #include "buffer.h"
 #include "memchunk.h"
 #include "allocator.h"
+#include "errors.h"
 
 using namespace nghttp2;
 
@@ -113,14 +115,11 @@ public:
 
   void pool_downstream_connection(std::unique_ptr<DownstreamConnection> dconn);
   void remove_downstream_connection(DownstreamConnection *dconn);
-  DownstreamAddr *get_downstream_addr(int &err, DownstreamAddrGroup *group,
-                                      Downstream *downstream);
-  // Returns DownstreamConnection object based on request path.  This
-  // function returns non-null DownstreamConnection, and assigns 0 to
-  // |err| if it succeeds, or returns nullptr, and assigns negative
-  // error code to |err|.
-  std::unique_ptr<DownstreamConnection>
-  get_downstream_connection(int &err, Downstream *downstream);
+  std::expected<DownstreamAddr *, Error>
+  get_downstream_addr(DownstreamAddrGroup *group, Downstream *downstream);
+  // Returns DownstreamConnection object based on request path.
+  std::expected<std::unique_ptr<DownstreamConnection>, Error>
+  get_downstream_connection(Downstream *downstream);
   MemchunkPool *get_mcpool();
   SSL *get_ssl() const;
   // Call this function when HTTP/2 connection header is received at
@@ -180,8 +179,8 @@ public:
   uint32_t get_affinity_cookie(Downstream *downstream,
                                std::string_view cookie_name);
 
-  DownstreamAddr *get_downstream_addr_strict_affinity(
-    int &err, const std::shared_ptr<SharedDownstreamAddr> &shared_addr,
+  std::expected<DownstreamAddr *, Error> get_downstream_addr_strict_affinity(
+    const std::shared_ptr<SharedDownstreamAddr> &shared_addr,
     Downstream *downstream);
 
   const UpstreamAddr *get_upstream_addr() const;

@@ -336,7 +336,7 @@ public:
   void set_assoc_stream_id(int64_t stream_id);
   int64_t get_assoc_stream_id() const;
   void pause_read(IOCtrlReason reason);
-  int resume_read(IOCtrlReason reason, size_t consumed);
+  std::expected<void, Error> resume_read(IOCtrlReason reason, size_t consumed);
   void force_resume_read();
   // Set stream ID for downstream HTTP2 connection.
   void set_downstream_stream_id(int64_t stream_id);
@@ -385,11 +385,12 @@ public:
 
   void set_request_start_time(std::chrono::steady_clock::time_point time);
   std::chrono::steady_clock::time_point get_request_start_time() const;
-  int push_request_headers();
+  std::expected<void, Error> push_request_headers();
   bool get_chunked_request() const;
   void set_chunked_request(bool f);
-  int push_upload_data_chunk(std::span<const uint8_t> data);
-  int end_upload_data();
+  std::expected<void, Error>
+  push_upload_data_chunk(std::span<const uint8_t> data);
+  std::expected<void, Error> end_upload_data();
   // Validates that received request body length and content-length
   // matches.
   bool validate_request_recv_body_length() const;

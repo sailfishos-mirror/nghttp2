@@ -99,31 +99,33 @@ void retry_downstream_connection(Downstream *downstream,
   auto buf = downstream->get_request_buf();
   buf->reset();
 
-  int rv;
-
   for (;;) {
-    auto ndconn = handler->get_downstream_connection(rv, downstream);
-    if (!ndconn) {
-      break;
-    }
-    if (downstream->attach_downstream_connection(std::move(ndconn)) != 0) {
-      continue;
-    }
-    if (downstream->push_request_headers() == 0) {
+    auto maybe_dconn = handler->get_downstream_connection(downstream);
+    if (!maybe_dconn) {
+      downstream->set_request_state(DownstreamState::CONNECT_FAIL);
+
+      int rv;
+
+      if (maybe_dconn.error() == Error::TLS_REQUIRED) {
+        rv =
+          upstream->on_downstream_abort_request_with_https_redirect(downstream);
+      } else {
+        rv = upstream->on_downstream_abort_request(downstream, status_code);
+      }
+
+      if (rv != 0) {
+        delete handler;
+      }
+
       return;
     }
-  }
-
-  downstream->set_request_state(DownstreamState::CONNECT_FAIL);
-
-  if (rv == SHRPX_ERR_TLS_REQUIRED) {
-    rv = upstream->on_downstream_abort_request_with_https_redirect(downstream);
-  } else {
-    rv = upstream->on_downstream_abort_request(downstream, status_code);
-  }
-
-  if (rv != 0) {
-    delete handler;
+    if (downstream->attach_downstream_connection(std::move(*maybe_dconn)) !=
+        0) {
+      continue;
+    }
+    if (downstream->push_request_headers()) {
+      return;
+    }
   }
 }
 } // namespace
@@ -235,22 +237,20 @@ HttpDownstreamConnection::~HttpDownstreamConnection() {
   }
 }
 
-int HttpDownstreamConnection::attach_downstream(Downstream *downstream) {
-  int rv;
-
+std::expected<void, Error>
+HttpDownstreamConnection::attach_downstream(Downstream *downstream) {
   if (log_enabled(INFO)) {
     Log{INFO, this} << "Attaching to DOWNSTREAM:" << downstream;
   }
 
   downstream_ = downstream;
 
-  rv = initiate_connection();
-  if (rv != 0) {
+  if (auto rv = initiate_connection(); !rv) {
     downstream_ = nullptr;
     return rv;
   }
 
-  return 0;
+  return {};
 }
 
 namespace {
@@ -271,7 +271,7 @@ constexpr llhttp_settings_t htp_hooks = {
   .on_message_complete = htp_msg_completecb,
 };
 
-int HttpDownstreamConnection::initiate_connection() {
+std::expected<void, Error> HttpDownstreamConnection::initiate_connection() {
   int rv;
 
   auto worker_blocker = worker_->get_connect_blocker();
@@ -280,7 +280,7 @@ int HttpDownstreamConnection::initiate_connection() {
       Log{INFO, this}
         << "Worker wide backend connection was blocked temporarily";
     }
-    return SHRPX_ERR_NETWORK;
+    return std::unexpected{Error::NETWORK};
   }
 
   auto &downstreamconf = *worker_->get_downstream_config();
@@ -300,7 +300,7 @@ int HttpDownstreamConnection::initiate_connection() {
                         << addr_->port << " was not available temporarily";
       }
 
-      return SHRPX_ERR_NETWORK;
+      return std::unexpected{Error::NETWORK};
     }
 
     Address *raddr;
@@ -309,14 +309,11 @@ int HttpDownstreamConnection::initiate_connection() {
       if (!check_dns_result) {
         auto dns_query = std::make_unique<DNSQuery>(
           addr_->host, [this](DNSResolverStatus status, const Address *result) {
-            int rv;
-
             if (status == DNSResolverStatus::OK) {
               *this->resolved_addr_ = *result;
             }
 
-            rv = this->initiate_connection();
-            if (rv != 0) {
+            if (!this->initiate_connection()) {
               // This callback destroys |this|.
               auto downstream = this->downstream_;
               backend_retry(downstream);
@@ -331,10 +328,10 @@ int HttpDownstreamConnection::initiate_connection() {
         switch (dns_tracker->resolve(resolved_addr_.get(), dns_query.get())) {
         case DNSResolverStatus::ERROR:
           downstream_failure(addr_, nullptr);
-          return SHRPX_ERR_NETWORK;
+          return std::unexpected{Error::NETWORK};
         case DNSResolverStatus::RUNNING:
           dns_query_ = std::move(dns_query);
-          return 0;
+          return {};
         case DNSResolverStatus::OK:
           break;
         default:
@@ -345,7 +342,7 @@ int HttpDownstreamConnection::initiate_connection() {
         case DNSResolverStatus::ERROR:
           dns_query_.reset();
           downstream_failure(addr_, nullptr);
-          return SHRPX_ERR_NETWORK;
+          return std::unexpected{Error::NETWORK};
         case DNSResolverStatus::OK:
           dns_query_.reset();
           break;
@@ -368,7 +365,7 @@ int HttpDownstreamConnection::initiate_connection() {
 
       worker_blocker->on_failure();
 
-      return SHRPX_ERR_NETWORK;
+      return std::unexpected{Error::NETWORK};
     }
 
     conn_.fd = *maybe_fd;
@@ -383,7 +380,7 @@ int HttpDownstreamConnection::initiate_connection() {
 
       downstream_failure(addr_, raddr);
 
-      return SHRPX_ERR_NETWORK;
+      return std::unexpected{Error::NETWORK};
     }
 
     if (log_enabled(INFO)) {
@@ -397,7 +394,7 @@ int HttpDownstreamConnection::initiate_connection() {
 
       auto ssl = tls::create_ssl(ssl_ctx_);
       if (!ssl) {
-        return -1;
+        return std::unexpected{Error::CRYPTO};
       }
 
       tls::setup_downstream_http1_alpn(ssl);
@@ -446,13 +443,13 @@ int HttpDownstreamConnection::initiate_connection() {
   llhttp_init(&response_htp_, HTTP_RESPONSE, &htp_hooks);
   response_htp_.data = downstream_;
 
-  return 0;
+  return {};
 }
 
-int HttpDownstreamConnection::push_request_headers() {
+std::expected<void, Error> HttpDownstreamConnection::push_request_headers() {
   if (request_header_written_) {
     signal_write();
-    return 0;
+    return {};
   }
 
   const auto &req = downstream_->request();
@@ -541,7 +538,7 @@ int HttpDownstreamConnection::push_request_headers() {
     if (req.http_major == 3 || req.http_major == 2) {
       std::array<uint8_t, 16> nonce;
       if (RAND_bytes(nonce.data(), nonce.size()) != 1) {
-        return -1;
+        return std::unexpected{Error::CRYPTO};
       }
       auto iov = make_byte_ref(balloc, base64::encode_length(nonce.size()) + 1);
       auto p = base64::encode(nonce, std::ranges::begin(iov));
@@ -706,7 +703,7 @@ int HttpDownstreamConnection::push_request_headers() {
     signal_write();
   }
 
-  return 0;
+  return {};
 }
 
 int HttpDownstreamConnection::process_blocked_request_buf() {
@@ -736,7 +733,7 @@ int HttpDownstreamConnection::process_blocked_request_buf() {
   return 0;
 }
 
-int HttpDownstreamConnection::push_upload_data_chunk(
+std::expected<void, Error> HttpDownstreamConnection::push_upload_data_chunk(
   std::span<const uint8_t> data) {
   if (!downstream_->get_request_header_sent()) {
     auto output = downstream_->get_blocked_request_buf();
@@ -746,7 +743,7 @@ int HttpDownstreamConnection::push_upload_data_chunk(
     if (request_header_written_) {
       signal_write();
     }
-    return 0;
+    return {};
   }
 
   auto chunked = downstream_->get_chunked_request();
@@ -766,27 +763,27 @@ int HttpDownstreamConnection::push_upload_data_chunk(
 
   signal_write();
 
-  return 0;
+  return {};
 }
 
-int HttpDownstreamConnection::end_upload_data() {
+std::expected<void, Error> HttpDownstreamConnection::end_upload_data() {
   if (!downstream_->get_request_header_sent()) {
     downstream_->set_blocked_request_data_eof(true);
     if (request_header_written_) {
       signal_write();
     }
-    return 0;
+    return {};
   }
 
   signal_write();
 
   if (!downstream_->get_chunked_request()) {
-    return 0;
+    return {};
   }
 
   end_upload_data_chunk();
 
-  return 0;
+  return {};
 }
 
 void HttpDownstreamConnection::end_upload_data_chunk() {
@@ -870,8 +867,8 @@ void HttpDownstreamConnection::pause_read(IOCtrlReason reason) {
   ioctrl_.pause_read(reason);
 }
 
-int HttpDownstreamConnection::resume_read(IOCtrlReason reason,
-                                          size_t consumed) {
+std::expected<void, Error>
+HttpDownstreamConnection::resume_read(IOCtrlReason reason, size_t consumed) {
   auto &downstreamconf = *worker_->get_downstream_config();
 
   if (downstream_->get_response_buf()->rleft() <=
@@ -879,7 +876,7 @@ int HttpDownstreamConnection::resume_read(IOCtrlReason reason,
     ioctrl_.resume_read(reason);
   }
 
-  return 0;
+  return {};
 }
 
 void HttpDownstreamConnection::force_resume_read() {

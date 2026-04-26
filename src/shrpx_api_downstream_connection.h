@@ -61,22 +61,26 @@ struct APIEndpoint {
   // Allowed methods.  This is bitwise OR of one or more of (1 <<
   // APIMethod value).
   uint8_t allowed_methods;
-  std::function<int(APIDownstreamConnection &)> handler;
+  std::function<std::expected<void, Error>(APIDownstreamConnection &)> handler;
 };
 
 class APIDownstreamConnection : public DownstreamConnection {
 public:
   APIDownstreamConnection(Worker *worker);
   ~APIDownstreamConnection() override;
-  int attach_downstream(Downstream *downstream) override;
+  std::expected<void, Error> attach_downstream(Downstream *downstream) override;
   void detach_downstream(Downstream *downstream) override;
 
-  int push_request_headers() override;
-  int push_upload_data_chunk(std::span<const uint8_t> data) override;
-  int end_upload_data() override;
+  std::expected<void, Error> push_request_headers() override;
+  std::expected<void, Error>
+  push_upload_data_chunk(std::span<const uint8_t> data) override;
+  std::expected<void, Error> end_upload_data() override;
 
   void pause_read(IOCtrlReason reason) override;
-  int resume_read(IOCtrlReason reason, size_t consumed) override;
+  std::expected<void, Error> resume_read(IOCtrlReason reason,
+                                         size_t consumed) override {
+    return {};
+  }
   void force_resume_read() override;
 
   std::expected<void, Error> on_read() override { return {}; }
@@ -96,9 +100,9 @@ public:
   int error_method_not_allowed();
 
   // Handles backendconfig API request.
-  int handle_backendconfig();
+  std::expected<void, Error> handle_backendconfig();
   // Handles configrevision API request.
-  int handle_configrevision();
+  std::expected<void, Error> handle_configrevision();
 
 private:
   Worker *worker_;

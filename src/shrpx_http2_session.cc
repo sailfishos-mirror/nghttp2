@@ -732,9 +732,10 @@ void Http2Session::remove_stream_data(StreamData *sd) {
   delete sd;
 }
 
-int Http2Session::submit_request(Http2DownstreamConnection *dconn,
-                                 const nghttp2_nv *nva, size_t nvlen,
-                                 const nghttp2_data_provider2 *data_prd) {
+std::expected<void, Error>
+Http2Session::submit_request(Http2DownstreamConnection *dconn,
+                             const nghttp2_nv *nva, size_t nvlen,
+                             const nghttp2_data_provider2 *data_prd) {
   assert(state_ == Http2SessionState::CONNECTED);
   auto sd = std::make_unique<StreamData>();
   sd->dlnext = sd->dlprev = nullptr;
@@ -744,17 +745,18 @@ int Http2Session::submit_request(Http2DownstreamConnection *dconn,
   if (stream_id < 0) {
     Log{FATAL, this} << "nghttp2_submit_request2() failed: "
                      << nghttp2_strerror(stream_id);
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   dconn->attach_stream_data(sd.get());
   dconn->get_downstream()->set_downstream_stream_id(stream_id);
   streams_.append(sd.release());
 
-  return 0;
+  return {};
 }
 
-int Http2Session::submit_rst_stream(int32_t stream_id, uint32_t error_code) {
+std::expected<void, Error>
+Http2Session::submit_rst_stream(int32_t stream_id, uint32_t error_code) {
   assert(state_ == Http2SessionState::CONNECTED);
   if (log_enabled(INFO)) {
     Log{INFO, this} << "RST_STREAM stream_id=" << stream_id
@@ -765,14 +767,15 @@ int Http2Session::submit_rst_stream(int32_t stream_id, uint32_t error_code) {
   if (rv != 0) {
     Log{FATAL, this} << "nghttp2_submit_rst_stream() failed: "
                      << nghttp2_strerror(rv);
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
-  return 0;
+  return {};
 }
 
 nghttp2_session *Http2Session::get_session() const { return session_; }
 
-int Http2Session::resume_data(Http2DownstreamConnection *dconn) {
+std::expected<void, Error>
+Http2Session::resume_data(Http2DownstreamConnection *dconn) {
   assert(state_ == Http2SessionState::CONNECTED);
   auto downstream = dconn->get_downstream();
   int rv = nghttp2_session_resume_data(
@@ -780,11 +783,11 @@ int Http2Session::resume_data(Http2DownstreamConnection *dconn) {
   switch (rv) {
   case 0:
   case NGHTTP2_ERR_INVALID_ARGUMENT:
-    return 0;
+    return {};
   default:
     Log{FATAL, this} << "nghttp2_resume_session() failed: "
                      << nghttp2_strerror(rv);
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 }
 
@@ -1388,7 +1391,7 @@ int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
   if (!sd || !sd->dconn) {
     http2session->submit_rst_stream(stream_id, NGHTTP2_INTERNAL_ERROR);
 
-    if (http2session->consume(stream_id, len) != 0) {
+    if (!http2session->consume(stream_id, len)) {
       return NGHTTP2_ERR_CALLBACK_FAILURE;
     }
 
@@ -1398,7 +1401,7 @@ int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
   if (!downstream->expect_response_body()) {
     http2session->submit_rst_stream(stream_id, NGHTTP2_INTERNAL_ERROR);
 
-    if (http2session->consume(stream_id, len) != 0) {
+    if (!http2session->consume(stream_id, len)) {
       return NGHTTP2_ERR_CALLBACK_FAILURE;
     }
 
@@ -1410,7 +1413,7 @@ int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
   if (downstream->get_non_final_response()) {
     http2session->submit_rst_stream(stream_id, NGHTTP2_PROTOCOL_ERROR);
 
-    if (http2session->consume(stream_id, len) != 0) {
+    if (!http2session->consume(stream_id, len)) {
       return NGHTTP2_ERR_CALLBACK_FAILURE;
     }
 
@@ -1429,7 +1432,7 @@ int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
       !rv) {
     http2session->submit_rst_stream(stream_id, NGHTTP2_INTERNAL_ERROR);
 
-    if (http2session->consume(stream_id, len) != 0) {
+    if (!http2session->consume(stream_id, len)) {
       return NGHTTP2_ERR_CALLBACK_FAILURE;
     }
 
@@ -1463,7 +1466,7 @@ int on_frame_send_callback(nghttp2_session *session, const nghttp2_frame *frame,
       if (src->rleft()) {
         auto dest = downstream->get_request_buf();
         src->remove(*dest);
-        if (http2session->resume_data(sd->dconn) != 0) {
+        if (!http2session->resume_data(sd->dconn)) {
           return NGHTTP2_ERR_CALLBACK_FAILURE;
         }
         downstream->ensure_downstream_wtimer();
@@ -1823,11 +1826,12 @@ int Http2Session::terminate_session(uint32_t error_code) {
 
 SSL *Http2Session::get_ssl() const { return conn_.tls.ssl; }
 
-int Http2Session::consume(int32_t stream_id, size_t len) {
+std::expected<void, Error> Http2Session::consume(int32_t stream_id,
+                                                 size_t len) {
   int rv;
 
   if (!session_) {
-    return 0;
+    return {};
   }
 
   rv = nghttp2_session_consume(session_, stream_id, len);
@@ -1836,10 +1840,10 @@ int Http2Session::consume(int32_t stream_id, size_t len) {
     Log{WARN, this} << "nghttp2_session_consume() returned error: "
                     << nghttp2_strerror(rv);
 
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
-  return 0;
+  return {};
 }
 
 bool Http2Session::can_push_request(const Downstream *downstream) const {
@@ -1912,7 +1916,7 @@ void Http2Session::submit_pending_requests() {
 
     auto upstream = downstream->get_upstream();
 
-    if (dconn->push_request_headers() != 0) {
+    if (!dconn->push_request_headers()) {
       if (log_enabled(INFO)) {
         Log{INFO, this} << "backend request failed";
       }

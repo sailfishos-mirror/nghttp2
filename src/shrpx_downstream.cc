@@ -248,7 +248,7 @@ Downstream::~Downstream() {
 
 int Downstream::attach_downstream_connection(
   std::unique_ptr<DownstreamConnection> dconn) {
-  if (dconn->attach_downstream(this) != 0) {
+  if (!dconn->attach_downstream(this)) {
     return -1;
   }
 
@@ -304,12 +304,13 @@ void Downstream::pause_read(IOCtrlReason reason) {
   }
 }
 
-int Downstream::resume_read(IOCtrlReason reason, size_t consumed) {
+std::expected<void, Error> Downstream::resume_read(IOCtrlReason reason,
+                                                   size_t consumed) {
   if (dconn_) {
     return dconn_->resume_read(reason, consumed);
   }
 
-  return 0;
+  return {};
 }
 
 void Downstream::force_resume_read() {
@@ -674,46 +675,47 @@ DefaultMemchunks *Downstream::get_request_buf() { return &request_buf_; }
 
 // Call this function after this object is attached to
 // Downstream. Otherwise, the program will crash.
-int Downstream::push_request_headers() {
+std::expected<void, Error> Downstream::push_request_headers() {
   if (!dconn_) {
     Log{INFO, this} << "dconn_ is NULL";
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
   return dconn_->push_request_headers();
 }
 
-int Downstream::push_upload_data_chunk(std::span<const uint8_t> data) {
+std::expected<void, Error>
+Downstream::push_upload_data_chunk(std::span<const uint8_t> data) {
   req_.recv_body_length += data.size();
 
   if (!dconn_ && !request_header_sent_) {
     blocked_request_buf_.append(data);
     req_.unconsumed_body_length += data.size();
-    return 0;
+    return {};
   }
 
   // Assumes that request headers have already been pushed to output
   // buffer using push_request_headers().
   if (!dconn_) {
     Log{INFO, this} << "dconn_ is NULL";
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
-  if (dconn_->push_upload_data_chunk(data) != 0) {
-    return -1;
+  if (auto rv = dconn_->push_upload_data_chunk(data); !rv) {
+    return rv;
   }
 
   req_.unconsumed_body_length += data.size();
 
-  return 0;
+  return {};
 }
 
-int Downstream::end_upload_data() {
+std::expected<void, Error> Downstream::end_upload_data() {
   if (!dconn_ && !request_header_sent_) {
     blocked_request_data_eof_ = true;
-    return 0;
+    return {};
   }
   if (!dconn_) {
     Log{INFO, this} << "dconn_ is NULL";
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
   return dconn_->end_upload_data();
 }

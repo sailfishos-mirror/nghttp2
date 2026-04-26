@@ -47,16 +47,18 @@ public:
                            DownstreamAddr *addr, struct ev_loop *loop,
                            Worker *worker);
   ~HttpDownstreamConnection() override;
-  int attach_downstream(Downstream *downstream) override;
+  std::expected<void, Error> attach_downstream(Downstream *downstream) override;
   void detach_downstream(Downstream *downstream) override;
 
-  int push_request_headers() override;
-  int push_upload_data_chunk(std::span<const uint8_t> data) override;
-  int end_upload_data() override;
+  std::expected<void, Error> push_request_headers() override;
+  std::expected<void, Error>
+  push_upload_data_chunk(std::span<const uint8_t> data) override;
+  std::expected<void, Error> end_upload_data() override;
   void end_upload_data_chunk();
 
   void pause_read(IOCtrlReason reason) override;
-  int resume_read(IOCtrlReason reason, size_t consumed) override;
+  std::expected<void, Error> resume_read(IOCtrlReason reason,
+                                         size_t consumed) override;
   void force_resume_read() override;
 
   std::expected<void, Error> on_read() override;
@@ -70,7 +72,7 @@ public:
   get_downstream_addr_group() const override;
   DownstreamAddr *get_addr() const override;
 
-  int initiate_connection();
+  std::expected<void, Error> initiate_connection();
 
   std::expected<void, Error> write_first();
   std::expected<void, Error> read_clear();

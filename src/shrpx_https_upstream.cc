@@ -504,15 +504,16 @@ int htp_hdrs_completecb(llhttp_t *htp) {
 #endif // defined(HAVE_MRUBY)
 
   for (;;) {
-    auto dconn = handler->get_downstream_connection(rv, downstream);
-
-    if (!dconn) {
-      if (rv == SHRPX_ERR_TLS_REQUIRED) {
+    auto maybe_dconn = handler->get_downstream_connection(downstream);
+    if (!maybe_dconn) {
+      if (maybe_dconn.error() == Error::TLS_REQUIRED) {
         upstream->redirect_to_https(downstream);
       }
       downstream->set_request_state(DownstreamState::CONNECT_FAIL);
       return -1;
     }
+
+    auto dconn = std::move(*maybe_dconn);
 
 #ifdef HAVE_MRUBY
     dconn_ptr = dconn.get();
@@ -538,9 +539,7 @@ int htp_hdrs_completecb(llhttp_t *htp) {
   }
 #endif // defined(HAVE_MRUBY)
 
-  rv = downstream->push_request_headers();
-
-  if (rv != 0) {
+  if (!downstream->push_request_headers()) {
     return -1;
   }
 
@@ -563,11 +562,10 @@ int htp_hdrs_completecb(llhttp_t *htp) {
 
 namespace {
 int htp_bodycb(llhttp_t *htp, const char *data, size_t len) {
-  int rv;
   auto upstream = static_cast<HttpsUpstream *>(htp->data);
   auto downstream = upstream->get_downstream();
-  rv = downstream->push_upload_data_chunk(as_uint8_span(std::span{data, len}));
-  if (rv != 0) {
+  if (!downstream->push_upload_data_chunk(
+        as_uint8_span(std::span{data, len}))) {
     // Ignore error if response has been completed.  We will end up in
     // htp_msg_completecb, and request will end gracefully.
     if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
@@ -583,7 +581,6 @@ int htp_bodycb(llhttp_t *htp, const char *data, size_t len) {
 
 namespace {
 int htp_msg_completecb(llhttp_t *htp) {
-  int rv;
   auto upstream = static_cast<HttpsUpstream *>(htp->data);
   if (log_enabled(INFO)) {
     Log{INFO, upstream} << "HTTP request completed";
@@ -598,8 +595,7 @@ int htp_msg_completecb(llhttp_t *htp) {
   }
 
   downstream->set_request_state(DownstreamState::MSG_COMPLETE);
-  rv = downstream->end_upload_data();
-  if (rv != 0) {
+  if (!downstream->end_upload_data()) {
     if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
       // Here both response and request were completed.  One of the
       // reason why end_upload_data() failed is when we sent response
@@ -639,9 +635,7 @@ int HttpsUpstream::on_read() {
   // downstream can be nullptr here, because it is initialized in the
   // callback chain called by llhttp_execute()
   if (downstream && downstream->get_upgraded()) {
-    auto rv = downstream->push_upload_data_chunk(rb->peek());
-
-    if (rv != 0) {
+    if (!downstream->push_upload_data_chunk(rb->peek())) {
       return -1;
     }
 
@@ -811,7 +805,11 @@ int HttpsUpstream::on_write() {
     }
   }
 
-  return downstream->resume_read(SHRPX_NO_BUFFER, resp.unconsumed_body_length);
+  if (!downstream->resume_read(SHRPX_NO_BUFFER, resp.unconsumed_body_length)) {
+    return -1;
+  }
+
+  return 0;
 }
 
 ClientHandler *HttpsUpstream::get_client_handler() const { return handler_; }
@@ -1464,7 +1462,6 @@ void HttpsUpstream::on_handler_delete() {
 }
 
 int HttpsUpstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
-  int rv;
   std::unique_ptr<DownstreamConnection> dconn;
 
   assert(downstream == downstream_.get());
@@ -1490,33 +1487,36 @@ int HttpsUpstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
 
   downstream_->add_retry();
 
-  rv = 0;
+  auto err = Error::INTERNAL;
 
   if (no_retry || downstream_->no_more_retry()) {
     goto fail;
   }
 
   for (;;) {
-    auto dconn = handler_->get_downstream_connection(rv, downstream_.get());
-    if (!dconn) {
+    auto maybe_dconn = handler_->get_downstream_connection(downstream_.get());
+    if (!maybe_dconn) {
+      err = maybe_dconn.error();
       goto fail;
     }
 
-    rv = downstream_->attach_downstream_connection(std::move(dconn));
-    if (rv == 0) {
+    if (downstream_->attach_downstream_connection(std::move(*maybe_dconn)) ==
+        0) {
       break;
     }
   }
 
-  rv = downstream_->push_request_headers();
-  if (rv != 0) {
+  if (auto rv = downstream_->push_request_headers(); !rv) {
+    err = rv.error();
     goto fail;
   }
 
   return 0;
 
 fail:
-  if (rv == SHRPX_ERR_TLS_REQUIRED) {
+  int rv;
+
+  if (err == Error::TLS_REQUIRED) {
     rv = on_downstream_abort_request_with_https_redirect(downstream);
   } else {
     rv = on_downstream_abort_request(downstream_.get(), 502);

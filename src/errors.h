@@ -98,6 +98,8 @@ enum class Error {
   CONNECT_FAIL,
   // ALPN negotiation failure.
   ALPN,
+  // No downstream address available.
+  NO_AVAIL_DOWNSTREAM,
 };
 
 } // namespace nghttp2
@@ -199,6 +201,9 @@ struct std::formatter<nghttp2::Error>
       break;
     case nghttp2::Error::ALPN:
       s = "ALPN negotiation failure"sv;
+      break;
+    case nghttp2::Error::NO_AVAIL_DOWNSTREAM:
+      s = "no downstream address available"sv;
       break;
     }
 
