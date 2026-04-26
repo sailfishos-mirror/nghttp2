@@ -562,11 +562,10 @@ int htp_hdrs_completecb(llhttp_t *htp) {
 
 namespace {
 int htp_bodycb(llhttp_t *htp, const char *data, size_t len) {
-  int rv;
   auto upstream = static_cast<HttpsUpstream *>(htp->data);
   auto downstream = upstream->get_downstream();
-  rv = downstream->push_upload_data_chunk(as_uint8_span(std::span{data, len}));
-  if (rv != 0) {
+  if (!downstream->push_upload_data_chunk(
+        as_uint8_span(std::span{data, len}))) {
     // Ignore error if response has been completed.  We will end up in
     // htp_msg_completecb, and request will end gracefully.
     if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
@@ -638,9 +637,7 @@ int HttpsUpstream::on_read() {
   // downstream can be nullptr here, because it is initialized in the
   // callback chain called by llhttp_execute()
   if (downstream && downstream->get_upgraded()) {
-    auto rv = downstream->push_upload_data_chunk(rb->peek());
-
-    if (rv != 0) {
+    if (!downstream->push_upload_data_chunk(rb->peek())) {
       return -1;
     }
 

@@ -682,28 +682,29 @@ std::expected<void, Error> Downstream::push_request_headers() {
   return dconn_->push_request_headers();
 }
 
-int Downstream::push_upload_data_chunk(std::span<const uint8_t> data) {
+std::expected<void, Error>
+Downstream::push_upload_data_chunk(std::span<const uint8_t> data) {
   req_.recv_body_length += data.size();
 
   if (!dconn_ && !request_header_sent_) {
     blocked_request_buf_.append(data);
     req_.unconsumed_body_length += data.size();
-    return 0;
+    return {};
   }
 
   // Assumes that request headers have already been pushed to output
   // buffer using push_request_headers().
   if (!dconn_) {
     Log{INFO, this} << "dconn_ is NULL";
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
-  if (dconn_->push_upload_data_chunk(data) != 0) {
-    return -1;
+  if (auto rv = dconn_->push_upload_data_chunk(data); !rv) {
+    return rv;
   }
 
   req_.unconsumed_body_length += data.size();
 
-  return 0;
+  return {};
 }
 
 int Downstream::end_upload_data() {

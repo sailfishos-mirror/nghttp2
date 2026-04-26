@@ -291,10 +291,10 @@ int APIDownstreamConnection::error_method_not_allowed() {
   return send_reply(405, APIStatusCode::FAILURE);
 }
 
-int APIDownstreamConnection::push_upload_data_chunk(
-  std::span<const uint8_t> data) {
+std::expected<void, Error>
+APIDownstreamConnection::push_upload_data_chunk(std::span<const uint8_t> data) {
   if (shutdown_read_ || !api_->require_body) {
-    return 0;
+    return {};
   }
 
   auto &req = downstream_->request();
@@ -303,7 +303,7 @@ int APIDownstreamConnection::push_upload_data_chunk(
   if (static_cast<size_t>(req.recv_body_length) > apiconf.max_request_body) {
     send_reply(413, APIStatusCode::FAILURE);
 
-    return 0;
+    return {};
   }
 
   ssize_t nwrite;
@@ -317,7 +317,7 @@ int APIDownstreamConnection::push_upload_data_chunk(
       Log{ERROR} << "Could not write API request body: errno=" << error;
       send_reply(500, APIStatusCode::FAILURE);
 
-      return 0;
+      return {};
     }
 
     data = data.subspan(as_unsigned(nwrite));
@@ -327,7 +327,7 @@ int APIDownstreamConnection::push_upload_data_chunk(
   // request buffer is effectively unlimited.  Actually, we cannot
   // call it here since it could recursively call this function again.
 
-  return 0;
+  return {};
 }
 
 int APIDownstreamConnection::end_upload_data() {

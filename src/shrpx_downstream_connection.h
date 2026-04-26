@@ -53,7 +53,8 @@ public:
   virtual void detach_downstream(Downstream *downstream) = 0;
 
   virtual std::expected<void, Error> push_request_headers() = 0;
-  virtual int push_upload_data_chunk(std::span<const uint8_t> data) = 0;
+  virtual std::expected<void, Error>
+  push_upload_data_chunk(std::span<const uint8_t> data) = 0;
   virtual int end_upload_data() = 0;
 
   virtual void pause_read(IOCtrlReason reason) = 0;

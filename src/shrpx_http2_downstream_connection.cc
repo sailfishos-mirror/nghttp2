@@ -514,30 +514,28 @@ std::expected<void, Error> Http2DownstreamConnection::push_request_headers() {
   return {};
 }
 
-int Http2DownstreamConnection::push_upload_data_chunk(
+std::expected<void, Error> Http2DownstreamConnection::push_upload_data_chunk(
   std::span<const uint8_t> data) {
   if (!downstream_->get_request_header_sent()) {
     auto output = downstream_->get_blocked_request_buf();
     auto &req = downstream_->request();
     output->append(data);
     req.unconsumed_body_length += data.size();
-    return 0;
+    return {};
   }
 
-  int rv;
   auto output = downstream_->get_request_buf();
   output->append(data);
   if (downstream_->get_downstream_stream_id() != -1) {
-    rv = http2session_->resume_data(this);
-    if (rv != 0) {
-      return -1;
+    if (auto rv = http2session_->resume_data(this); !rv) {
+      return rv;
     }
 
     downstream_->ensure_downstream_wtimer();
 
     http2session_->signal_write();
   }
-  return 0;
+  return {};
 }
 
 int Http2DownstreamConnection::end_upload_data() {
@@ -546,10 +544,8 @@ int Http2DownstreamConnection::end_upload_data() {
     return 0;
   }
 
-  int rv;
   if (downstream_->get_downstream_stream_id() != -1) {
-    rv = http2session_->resume_data(this);
-    if (rv != 0) {
+    if (!http2session_->resume_data(this)) {
       return -1;
     }
 

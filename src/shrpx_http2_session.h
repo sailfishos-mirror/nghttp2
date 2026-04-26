@@ -133,7 +133,7 @@ public:
 
   nghttp2_session *get_session() const;
 
-  int resume_data(Http2DownstreamConnection *dconn);
+  std::expected<void, Error> resume_data(Http2DownstreamConnection *dconn);
 
   int connection_made();
 

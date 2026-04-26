@@ -774,7 +774,8 @@ Http2Session::submit_rst_stream(int32_t stream_id, uint32_t error_code) {
 
 nghttp2_session *Http2Session::get_session() const { return session_; }
 
-int Http2Session::resume_data(Http2DownstreamConnection *dconn) {
+std::expected<void, Error>
+Http2Session::resume_data(Http2DownstreamConnection *dconn) {
   assert(state_ == Http2SessionState::CONNECTED);
   auto downstream = dconn->get_downstream();
   int rv = nghttp2_session_resume_data(
@@ -782,11 +783,11 @@ int Http2Session::resume_data(Http2DownstreamConnection *dconn) {
   switch (rv) {
   case 0:
   case NGHTTP2_ERR_INVALID_ARGUMENT:
-    return 0;
+    return {};
   default:
     Log{FATAL, this} << "nghttp2_resume_session() failed: "
                      << nghttp2_strerror(rv);
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 }
 
@@ -1465,7 +1466,7 @@ int on_frame_send_callback(nghttp2_session *session, const nghttp2_frame *frame,
       if (src->rleft()) {
         auto dest = downstream->get_request_buf();
         src->remove(*dest);
-        if (http2session->resume_data(sd->dconn) != 0) {
+        if (!http2session->resume_data(sd->dconn)) {
           return NGHTTP2_ERR_CALLBACK_FAILURE;
         }
         downstream->ensure_downstream_wtimer();

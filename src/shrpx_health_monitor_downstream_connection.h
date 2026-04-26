@@ -39,7 +39,10 @@ public:
   void detach_downstream(Downstream *downstream) override;
 
   std::expected<void, Error> push_request_headers() override;
-  int push_upload_data_chunk(std::span<const uint8_t> data) override;
+  std::expected<void, Error>
+  push_upload_data_chunk(std::span<const uint8_t> data) override {
+    return {};
+  }
   int end_upload_data() override;
 
   void pause_read(IOCtrlReason reason) override;

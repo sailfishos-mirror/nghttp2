@@ -733,7 +733,7 @@ int HttpDownstreamConnection::process_blocked_request_buf() {
   return 0;
 }
 
-int HttpDownstreamConnection::push_upload_data_chunk(
+std::expected<void, Error> HttpDownstreamConnection::push_upload_data_chunk(
   std::span<const uint8_t> data) {
   if (!downstream_->get_request_header_sent()) {
     auto output = downstream_->get_blocked_request_buf();
@@ -743,7 +743,7 @@ int HttpDownstreamConnection::push_upload_data_chunk(
     if (request_header_written_) {
       signal_write();
     }
-    return 0;
+    return {};
   }
 
   auto chunked = downstream_->get_chunked_request();
@@ -763,7 +763,7 @@ int HttpDownstreamConnection::push_upload_data_chunk(
 
   signal_write();
 
-  return 0;
+  return {};
 }
 
 int HttpDownstreamConnection::end_upload_data() {

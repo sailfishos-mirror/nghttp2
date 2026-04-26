@@ -64,11 +64,6 @@ HealthMonitorDownstreamConnection::push_request_headers() {
   return {};
 }
 
-int HealthMonitorDownstreamConnection::push_upload_data_chunk(
-  std::span<const uint8_t> data) {
-  return 0;
-}
-
 int HealthMonitorDownstreamConnection::end_upload_data() {
   auto upstream = downstream_->get_upstream();
   auto &resp = downstream_->response();
