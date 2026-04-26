@@ -2201,8 +2201,8 @@ int Http2Session::handle_downstream_push_promise(Downstream *downstream,
 
   auto ptr = promised_dconn.get();
 
-  if (promised_downstream->attach_downstream_connection(
-        std::move(promised_dconn)) != 0) {
+  if (!promised_downstream->attach_downstream_connection(
+        std::move(promised_dconn))) {
     return -1;
   }
 

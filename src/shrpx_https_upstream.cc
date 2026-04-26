@@ -518,7 +518,7 @@ int htp_hdrs_completecb(llhttp_t *htp) {
 #ifdef HAVE_MRUBY
     dconn_ptr = dconn.get();
 #endif // defined(HAVE_MRUBY)
-    if (downstream->attach_downstream_connection(std::move(dconn)) == 0) {
+    if (downstream->attach_downstream_connection(std::move(dconn))) {
       break;
     }
   }
@@ -1500,8 +1500,7 @@ int HttpsUpstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
       goto fail;
     }
 
-    if (downstream_->attach_downstream_connection(std::move(*maybe_dconn)) ==
-        0) {
+    if (downstream_->attach_downstream_connection(std::move(*maybe_dconn))) {
       break;
     }
   }

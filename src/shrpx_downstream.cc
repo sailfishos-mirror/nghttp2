@@ -246,15 +246,15 @@ Downstream::~Downstream() {
   }
 }
 
-int Downstream::attach_downstream_connection(
+std::expected<void, Error> Downstream::attach_downstream_connection(
   std::unique_ptr<DownstreamConnection> dconn) {
-  if (!dconn->attach_downstream(this)) {
-    return -1;
+  if (auto rv = dconn->attach_downstream(this); !rv) {
+    return rv;
   }
 
   dconn_ = std::move(dconn);
 
-  return 0;
+  return {};
 }
 
 void Downstream::detach_downstream_connection() {

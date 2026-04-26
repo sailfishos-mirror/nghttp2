@@ -119,8 +119,7 @@ void retry_downstream_connection(Downstream *downstream,
 
       return;
     }
-    if (downstream->attach_downstream_connection(std::move(*maybe_dconn)) !=
-        0) {
+    if (!downstream->attach_downstream_connection(std::move(*maybe_dconn))) {
       continue;
     }
     if (downstream->push_request_headers()) {

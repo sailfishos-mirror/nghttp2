@@ -342,7 +342,8 @@ public:
   void set_downstream_stream_id(int64_t stream_id);
   int64_t get_downstream_stream_id() const;
 
-  int attach_downstream_connection(std::unique_ptr<DownstreamConnection> dconn);
+  std::expected<void, Error>
+  attach_downstream_connection(std::unique_ptr<DownstreamConnection> dconn);
   void detach_downstream_connection();
   DownstreamConnection *get_downstream_connection();
   // Returns dconn_ and nullifies dconn_.
