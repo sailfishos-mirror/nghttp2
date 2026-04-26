@@ -29,6 +29,7 @@
 
 #include <unordered_set>
 #include <memory>
+#include <expected>
 
 #include "ssl_compat.h"
 
@@ -48,6 +49,7 @@
 #include "shrpx_connection.h"
 #include "buffer.h"
 #include "template.h"
+#include "errors.h"
 
 using namespace nghttp2;
 
@@ -113,8 +115,8 @@ public:
 
   // If hard is true, all pending requests are abandoned and
   // associated ClientHandlers will be deleted.
-  int disconnect(bool hard = false);
-  int initiate_connection();
+  void disconnect(bool hard = false);
+  std::expected<void, Error> initiate_connection();
   int resolve_name();
 
   void add_downstream_connection(Http2DownstreamConnection *dconn);

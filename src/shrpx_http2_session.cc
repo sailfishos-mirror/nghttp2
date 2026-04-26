@@ -158,7 +158,7 @@ namespace {
 void initiate_connection_cb(struct ev_loop *loop, ev_timer *w, int revents) {
   auto http2session = static_cast<Http2Session *>(w->data);
   ev_timer_stop(loop, w);
-  if (http2session->initiate_connection() != 0) {
+  if (!http2session->initiate_connection()) {
     if (log_enabled(INFO)) {
       Log{INFO, http2session} << "Could not initiate backend connection";
     }
@@ -230,7 +230,7 @@ Http2Session::~Http2Session() {
   disconnect(should_hard_fail());
 }
 
-int Http2Session::disconnect(bool hard) {
+void Http2Session::disconnect(bool hard) {
   if (log_enabled(INFO)) {
     Log{INFO, this} << "Disconnecting";
   }
@@ -298,22 +298,17 @@ int Http2Session::disconnect(bool hard) {
     delete s;
     s = next;
   }
-
-  return 0;
 }
 
 int Http2Session::resolve_name() {
   auto dns_query = std::make_unique<DNSQuery>(
     addr_->host, [this](DNSResolverStatus status, const Address *result) {
-      int rv;
-
       if (status == DNSResolverStatus::OK) {
         *resolved_addr_ = *result;
         resolved_addr_->port(addr_->port);
       }
 
-      rv = this->initiate_connection();
-      if (rv != 0) {
+      if (!this->initiate_connection()) {
         delete this;
       }
     });
@@ -343,7 +338,7 @@ constexpr llhttp_settings_t htp_hooks = {
   .on_headers_complete = htp_hdrs_completecb,
 };
 
-int Http2Session::initiate_connection() {
+std::expected<void, Error> Http2Session::initiate_connection() {
   int rv = 0;
 
   auto worker_blocker = worker_->get_connect_blocker();
@@ -355,7 +350,7 @@ int Http2Session::initiate_connection() {
         Log{INFO, this}
           << "Worker wide backend connection was blocked temporarily";
       }
-      return -1;
+      return std::unexpected{Error::INTERNAL};
     }
   }
 
@@ -376,7 +371,7 @@ int Http2Session::initiate_connection() {
                       << ", errno=" << error;
 
       worker_blocker->on_failure();
-      return -1;
+      return std::unexpected{maybe_fd.error()};
     }
 
     conn_.fd = *maybe_fd;
@@ -390,7 +385,7 @@ int Http2Session::initiate_connection() {
 
       worker_blocker->on_failure();
 
-      return -1;
+      return std::unexpected{Error::SYSCALL};
     }
 
     raddr_ = &proxy.addr;
@@ -416,7 +411,7 @@ int Http2Session::initiate_connection() {
 
     state_ = Http2SessionState::PROXY_CONNECTING;
 
-    return 0;
+    return {};
   }
 
   if (state_ == Http2SessionState::DISCONNECTED ||
@@ -433,7 +428,7 @@ int Http2Session::initiate_connection() {
       if (state_ != Http2SessionState::RESOLVING_NAME) {
         auto ssl = tls::create_ssl(ssl_ctx_);
         if (!ssl) {
-          return -1;
+          return std::unexpected{Error::CRYPTO};
         }
 
         tls::setup_downstream_http2_alpn(ssl);
@@ -462,10 +457,10 @@ int Http2Session::initiate_connection() {
           rv = resolve_name();
           if (rv != 0) {
             downstream_failure(addr_, nullptr);
-            return -1;
+            return std::unexpected{Error::INTERNAL};
           }
           if (state_ == Http2SessionState::RESOLVING_NAME) {
-            return 0;
+            return {};
           }
           raddr_ = resolved_addr_.get();
         } else {
@@ -476,7 +471,7 @@ int Http2Session::initiate_connection() {
       if (state_ == Http2SessionState::RESOLVING_NAME) {
         if (dns_query_->status == DNSResolverStatus::ERROR) {
           downstream_failure(addr_, nullptr);
-          return -1;
+          return std::unexpected{Error::DNS};
         }
         assert(dns_query_->status == DNSResolverStatus::OK);
         state_ = Http2SessionState::DISCONNECTED;
@@ -498,7 +493,7 @@ int Http2Session::initiate_connection() {
                           << ", errno=" << error;
 
           worker_blocker->on_failure();
-          return -1;
+          return std::unexpected{maybe_fd.error()};
         }
 
         conn_.fd = *maybe_fd;
@@ -515,7 +510,7 @@ int Http2Session::initiate_connection() {
                           << ", errno=" << error;
 
           downstream_failure(addr_, raddr_);
-          return -1;
+          return std::unexpected{Error::SYSCALL};
         }
 
         ev_io_set(&conn_.rev, conn_.fd, EV_READ);
@@ -530,10 +525,10 @@ int Http2Session::initiate_connection() {
           rv = resolve_name();
           if (rv != 0) {
             downstream_failure(addr_, nullptr);
-            return -1;
+            return std::unexpected{Error::INTERNAL};
           }
           if (state_ == Http2SessionState::RESOLVING_NAME) {
-            return 0;
+            return {};
           }
           raddr_ = resolved_addr_.get();
         } else {
@@ -544,7 +539,7 @@ int Http2Session::initiate_connection() {
       if (state_ == Http2SessionState::RESOLVING_NAME) {
         if (dns_query_->status == DNSResolverStatus::ERROR) {
           downstream_failure(addr_, nullptr);
-          return -1;
+          return std::unexpected{Error::DNS};
         }
         assert(dns_query_->status == DNSResolverStatus::OK);
         state_ = Http2SessionState::DISCONNECTED;
@@ -564,7 +559,7 @@ int Http2Session::initiate_connection() {
                           << ", errno=" << error;
 
           worker_blocker->on_failure();
-          return -1;
+          return std::unexpected{maybe_fd.error()};
         }
 
         conn_.fd = *maybe_fd;
@@ -579,7 +574,7 @@ int Http2Session::initiate_connection() {
                           << ", errno=" << error;
 
           downstream_failure(addr_, raddr_);
-          return -1;
+          return std::unexpected{Error::SYSCALL};
         }
 
         ev_io_set(&conn_.rev, conn_.fd, EV_READ);
@@ -592,8 +587,8 @@ int Http2Session::initiate_connection() {
       on_read_ = &Http2Session::read_noop;
       on_write_ = &Http2Session::write_noop;
 
-      if (!connected()) {
-        return -1;
+      if (auto rv = connected(); !rv) {
+        return rv;
       }
     }
 
@@ -605,13 +600,13 @@ int Http2Session::initiate_connection() {
     conn_.wt.repeat = downstreamconf.timeout.connect;
     ev_timer_again(conn_.loop, &conn_.wt);
 
-    return 0;
+    return {};
   }
 
   // Unreachable
   assert(0);
 
-  return 0;
+  return {};
 }
 
 namespace {
@@ -646,7 +641,7 @@ int Http2Session::downstream_read_proxy(std::span<const uint8_t> data) {
     switch (state_) {
     case Http2SessionState::PROXY_CONNECTED:
       // Initiate SSL/TLS handshake through established tunnel.
-      if (initiate_connection() != 0) {
+      if (!initiate_connection()) {
         return -1;
       }
       return 0;

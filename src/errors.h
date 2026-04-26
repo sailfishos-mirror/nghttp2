@@ -102,6 +102,8 @@ enum class Error {
   NO_AVAIL_DOWNSTREAM,
   // HTTP messaging violation.
   HTTP,
+  // DNS related error.
+  DNS,
 };
 
 } // namespace nghttp2
@@ -209,6 +211,9 @@ struct std::formatter<nghttp2::Error>
       break;
     case nghttp2::Error::HTTP:
       s = "HTTP messaging violation"sv;
+      break;
+    case nghttp2::Error::DNS:
+      s = "DNS failure"sv;
       break;
     }
 
