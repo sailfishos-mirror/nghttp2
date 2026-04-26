@@ -300,7 +300,7 @@ void Http2Session::disconnect(bool hard) {
   }
 }
 
-int Http2Session::resolve_name() {
+std::expected<void, Error> Http2Session::resolve_name() {
   auto dns_query = std::make_unique<DNSQuery>(
     addr_->host, [this](DNSResolverStatus status, const Address *result) {
       if (status == DNSResolverStatus::OK) {
@@ -316,14 +316,14 @@ int Http2Session::resolve_name() {
   auto dns_tracker = worker_->get_dns_tracker();
   switch (dns_tracker->resolve(resolved_addr_.get(), dns_query.get())) {
   case DNSResolverStatus::ERROR:
-    return -1;
+    return std::unexpected{Error::DNS};
   case DNSResolverStatus::RUNNING:
     dns_query_ = std::move(dns_query);
     state_ = Http2SessionState::RESOLVING_NAME;
-    return 0;
+    return {};
   case DNSResolverStatus::OK:
     resolved_addr_->port(addr_->port);
-    return 0;
+    return {};
   default:
     assert(0);
     abort();
@@ -454,10 +454,9 @@ std::expected<void, Error> Http2Session::initiate_connection() {
 
       if (state_ == Http2SessionState::DISCONNECTED) {
         if (addr_->dns) {
-          rv = resolve_name();
-          if (rv != 0) {
+          if (auto rv = resolve_name(); !rv) {
             downstream_failure(addr_, nullptr);
-            return std::unexpected{Error::INTERNAL};
+            return rv;
           }
           if (state_ == Http2SessionState::RESOLVING_NAME) {
             return {};
@@ -522,10 +521,9 @@ std::expected<void, Error> Http2Session::initiate_connection() {
       if (state_ == Http2SessionState::DISCONNECTED) {
         // Without TLS and proxy.
         if (addr_->dns) {
-          rv = resolve_name();
-          if (rv != 0) {
+          if (auto rv = resolve_name(); !rv) {
             downstream_failure(addr_, nullptr);
-            return std::unexpected{Error::INTERNAL};
+            return rv;
           }
           if (state_ == Http2SessionState::RESOLVING_NAME) {
             return {};

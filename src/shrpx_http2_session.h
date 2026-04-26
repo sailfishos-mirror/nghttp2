@@ -117,7 +117,7 @@ public:
   // associated ClientHandlers will be deleted.
   void disconnect(bool hard = false);
   std::expected<void, Error> initiate_connection();
-  int resolve_name();
+  std::expected<void, Error> resolve_name();
 
   void add_downstream_connection(Http2DownstreamConnection *dconn);
   void remove_downstream_connection(Http2DownstreamConnection *dconn);
