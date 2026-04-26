@@ -100,6 +100,8 @@ enum class Error {
   ALPN,
   // No downstream address available.
   NO_AVAIL_DOWNSTREAM,
+  // HTTP messaging violation.
+  HTTP,
 };
 
 } // namespace nghttp2
@@ -204,6 +206,9 @@ struct std::formatter<nghttp2::Error>
       break;
     case nghttp2::Error::NO_AVAIL_DOWNSTREAM:
       s = "no downstream address available"sv;
+      break;
+    case nghttp2::Error::HTTP:
+      s = "HTTP messaging violation"sv;
       break;
     }
 
