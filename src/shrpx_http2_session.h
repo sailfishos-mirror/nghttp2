@@ -29,6 +29,7 @@
 
 #include <unordered_set>
 #include <memory>
+#include <expected>
 
 #include "ssl_compat.h"
 
@@ -48,6 +49,7 @@
 #include "shrpx_connection.h"
 #include "buffer.h"
 #include "template.h"
+#include "errors.h"
 
 using namespace nghttp2;
 
@@ -113,9 +115,9 @@ public:
 
   // If hard is true, all pending requests are abandoned and
   // associated ClientHandlers will be deleted.
-  int disconnect(bool hard = false);
-  int initiate_connection();
-  int resolve_name();
+  void disconnect(bool hard = false);
+  std::expected<void, Error> initiate_connection();
+  std::expected<void, Error> resolve_name();
 
   void add_downstream_connection(Http2DownstreamConnection *dconn);
   void remove_downstream_connection(Http2DownstreamConnection *dconn);
@@ -129,19 +131,19 @@ public:
   std::expected<void, Error> submit_rst_stream(int32_t stream_id,
                                                uint32_t error_code);
 
-  int terminate_session(uint32_t error_code);
+  std::expected<void, Error> terminate_session(uint32_t error_code);
 
   nghttp2_session *get_session() const;
 
   std::expected<void, Error> resume_data(Http2DownstreamConnection *dconn);
 
-  int connection_made();
+  std::expected<void, Error> connection_made();
 
   std::expected<void, Error> do_read();
   std::expected<void, Error> do_write();
 
-  int on_read(std::span<const uint8_t> data);
-  int on_write();
+  std::expected<void, Error> on_read(std::span<const uint8_t> data);
+  std::expected<void, Error> on_write();
 
   std::expected<void, Error> connected();
   std::expected<void, Error> read_clear();
@@ -153,15 +155,18 @@ public:
   // watcher.
   std::expected<void, Error> write_void();
 
-  int downstream_read_proxy(std::span<const uint8_t> data);
-  int downstream_connect_proxy();
+  std::expected<void, Error>
+  downstream_read_proxy(std::span<const uint8_t> data);
+  std::expected<void, Error> downstream_connect_proxy();
 
-  int downstream_read(std::span<const uint8_t> data);
-  int downstream_write();
+  std::expected<void, Error> downstream_read(std::span<const uint8_t> data);
+  std::expected<void, Error> downstream_write();
 
   std::expected<void, Error> noop() { return {}; }
-  int read_noop(std::span<const uint8_t> data);
-  int write_noop();
+  std::expected<void, Error> read_noop(std::span<const uint8_t> data) {
+    return {};
+  }
+  std::expected<void, Error> write_noop() { return {}; }
 
   void signal_write();
 
@@ -204,10 +209,12 @@ public:
 
   const std::shared_ptr<DownstreamAddrGroup> &get_downstream_addr_group() const;
 
-  int handle_downstream_push_promise(Downstream *downstream,
-                                     int32_t promised_stream_id);
-  int handle_downstream_push_promise_complete(Downstream *downstream,
-                                              Downstream *promised_downstream);
+  std::expected<void, Error>
+  handle_downstream_push_promise(Downstream *downstream,
+                                 int32_t promised_stream_id);
+  std::expected<void, Error>
+  handle_downstream_push_promise_complete(Downstream *downstream,
+                                          Downstream *promised_downstream);
 
   // Returns number of downstream connections, including pushed
   // streams.
@@ -271,8 +278,10 @@ private:
   DList<Http2DownstreamConnection> dconns_;
   DList<StreamData> streams_;
   std::function<std::expected<void, Error>(Http2Session &)> read_, write_;
-  std::function<int(Http2Session &, std::span<const uint8_t>)> on_read_;
-  std::function<int(Http2Session &)> on_write_;
+  std::function<std::expected<void, Error>(Http2Session &,
+                                           std::span<const uint8_t>)>
+    on_read_;
+  std::function<std::expected<void, Error>(Http2Session &)> on_write_;
   // Used to parse the response from HTTP proxy
   std::unique_ptr<llhttp_t> proxy_htp_;
   Worker *worker_;

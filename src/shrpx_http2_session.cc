@@ -100,7 +100,7 @@ void settings_timeout_cb(struct ev_loop *loop, ev_timer *w, int revents) {
 
   downstream_failure(http2session->get_addr(), http2session->get_raddr());
 
-  if (http2session->terminate_session(NGHTTP2_SETTINGS_TIMEOUT) != 0) {
+  if (!http2session->terminate_session(NGHTTP2_SETTINGS_TIMEOUT)) {
     delete http2session;
 
     return;
@@ -158,7 +158,7 @@ namespace {
 void initiate_connection_cb(struct ev_loop *loop, ev_timer *w, int revents) {
   auto http2session = static_cast<Http2Session *>(w->data);
   ev_timer_stop(loop, w);
-  if (http2session->initiate_connection() != 0) {
+  if (!http2session->initiate_connection()) {
     if (log_enabled(INFO)) {
       Log{INFO, http2session} << "Could not initiate backend connection";
     }
@@ -230,7 +230,7 @@ Http2Session::~Http2Session() {
   disconnect(should_hard_fail());
 }
 
-int Http2Session::disconnect(bool hard) {
+void Http2Session::disconnect(bool hard) {
   if (log_enabled(INFO)) {
     Log{INFO, this} << "Disconnecting";
   }
@@ -298,22 +298,17 @@ int Http2Session::disconnect(bool hard) {
     delete s;
     s = next;
   }
-
-  return 0;
 }
 
-int Http2Session::resolve_name() {
+std::expected<void, Error> Http2Session::resolve_name() {
   auto dns_query = std::make_unique<DNSQuery>(
     addr_->host, [this](DNSResolverStatus status, const Address *result) {
-      int rv;
-
       if (status == DNSResolverStatus::OK) {
         *resolved_addr_ = *result;
         resolved_addr_->port(addr_->port);
       }
 
-      rv = this->initiate_connection();
-      if (rv != 0) {
+      if (!this->initiate_connection()) {
         delete this;
       }
     });
@@ -321,14 +316,14 @@ int Http2Session::resolve_name() {
   auto dns_tracker = worker_->get_dns_tracker();
   switch (dns_tracker->resolve(resolved_addr_.get(), dns_query.get())) {
   case DNSResolverStatus::ERROR:
-    return -1;
+    return std::unexpected{Error::DNS};
   case DNSResolverStatus::RUNNING:
     dns_query_ = std::move(dns_query);
     state_ = Http2SessionState::RESOLVING_NAME;
-    return 0;
+    return {};
   case DNSResolverStatus::OK:
     resolved_addr_->port(addr_->port);
-    return 0;
+    return {};
   default:
     assert(0);
     abort();
@@ -343,7 +338,7 @@ constexpr llhttp_settings_t htp_hooks = {
   .on_headers_complete = htp_hdrs_completecb,
 };
 
-int Http2Session::initiate_connection() {
+std::expected<void, Error> Http2Session::initiate_connection() {
   int rv = 0;
 
   auto worker_blocker = worker_->get_connect_blocker();
@@ -355,7 +350,7 @@ int Http2Session::initiate_connection() {
         Log{INFO, this}
           << "Worker wide backend connection was blocked temporarily";
       }
-      return -1;
+      return std::unexpected{Error::INTERNAL};
     }
   }
 
@@ -376,7 +371,7 @@ int Http2Session::initiate_connection() {
                       << ", errno=" << error;
 
       worker_blocker->on_failure();
-      return -1;
+      return std::unexpected{maybe_fd.error()};
     }
 
     conn_.fd = *maybe_fd;
@@ -390,7 +385,7 @@ int Http2Session::initiate_connection() {
 
       worker_blocker->on_failure();
 
-      return -1;
+      return std::unexpected{Error::SYSCALL};
     }
 
     raddr_ = &proxy.addr;
@@ -416,7 +411,7 @@ int Http2Session::initiate_connection() {
 
     state_ = Http2SessionState::PROXY_CONNECTING;
 
-    return 0;
+    return {};
   }
 
   if (state_ == Http2SessionState::DISCONNECTED ||
@@ -433,7 +428,7 @@ int Http2Session::initiate_connection() {
       if (state_ != Http2SessionState::RESOLVING_NAME) {
         auto ssl = tls::create_ssl(ssl_ctx_);
         if (!ssl) {
-          return -1;
+          return std::unexpected{Error::CRYPTO};
         }
 
         tls::setup_downstream_http2_alpn(ssl);
@@ -459,13 +454,12 @@ int Http2Session::initiate_connection() {
 
       if (state_ == Http2SessionState::DISCONNECTED) {
         if (addr_->dns) {
-          rv = resolve_name();
-          if (rv != 0) {
+          if (auto rv = resolve_name(); !rv) {
             downstream_failure(addr_, nullptr);
-            return -1;
+            return rv;
           }
           if (state_ == Http2SessionState::RESOLVING_NAME) {
-            return 0;
+            return {};
           }
           raddr_ = resolved_addr_.get();
         } else {
@@ -476,7 +470,7 @@ int Http2Session::initiate_connection() {
       if (state_ == Http2SessionState::RESOLVING_NAME) {
         if (dns_query_->status == DNSResolverStatus::ERROR) {
           downstream_failure(addr_, nullptr);
-          return -1;
+          return std::unexpected{Error::DNS};
         }
         assert(dns_query_->status == DNSResolverStatus::OK);
         state_ = Http2SessionState::DISCONNECTED;
@@ -498,7 +492,7 @@ int Http2Session::initiate_connection() {
                           << ", errno=" << error;
 
           worker_blocker->on_failure();
-          return -1;
+          return std::unexpected{maybe_fd.error()};
         }
 
         conn_.fd = *maybe_fd;
@@ -515,7 +509,7 @@ int Http2Session::initiate_connection() {
                           << ", errno=" << error;
 
           downstream_failure(addr_, raddr_);
-          return -1;
+          return std::unexpected{Error::SYSCALL};
         }
 
         ev_io_set(&conn_.rev, conn_.fd, EV_READ);
@@ -527,13 +521,12 @@ int Http2Session::initiate_connection() {
       if (state_ == Http2SessionState::DISCONNECTED) {
         // Without TLS and proxy.
         if (addr_->dns) {
-          rv = resolve_name();
-          if (rv != 0) {
+          if (auto rv = resolve_name(); !rv) {
             downstream_failure(addr_, nullptr);
-            return -1;
+            return rv;
           }
           if (state_ == Http2SessionState::RESOLVING_NAME) {
-            return 0;
+            return {};
           }
           raddr_ = resolved_addr_.get();
         } else {
@@ -544,7 +537,7 @@ int Http2Session::initiate_connection() {
       if (state_ == Http2SessionState::RESOLVING_NAME) {
         if (dns_query_->status == DNSResolverStatus::ERROR) {
           downstream_failure(addr_, nullptr);
-          return -1;
+          return std::unexpected{Error::DNS};
         }
         assert(dns_query_->status == DNSResolverStatus::OK);
         state_ = Http2SessionState::DISCONNECTED;
@@ -564,7 +557,7 @@ int Http2Session::initiate_connection() {
                           << ", errno=" << error;
 
           worker_blocker->on_failure();
-          return -1;
+          return std::unexpected{maybe_fd.error()};
         }
 
         conn_.fd = *maybe_fd;
@@ -579,7 +572,7 @@ int Http2Session::initiate_connection() {
                           << ", errno=" << error;
 
           downstream_failure(addr_, raddr_);
-          return -1;
+          return std::unexpected{Error::SYSCALL};
         }
 
         ev_io_set(&conn_.rev, conn_.fd, EV_READ);
@@ -592,8 +585,8 @@ int Http2Session::initiate_connection() {
       on_read_ = &Http2Session::read_noop;
       on_write_ = &Http2Session::write_noop;
 
-      if (!connected()) {
-        return -1;
+      if (auto rv = connected(); !rv) {
+        return rv;
       }
     }
 
@@ -605,13 +598,13 @@ int Http2Session::initiate_connection() {
     conn_.wt.repeat = downstreamconf.timeout.connect;
     ev_timer_again(conn_.loop, &conn_.wt);
 
-    return 0;
+    return {};
   }
 
   // Unreachable
   assert(0);
 
-  return 0;
+  return {};
 }
 
 namespace {
@@ -639,19 +632,20 @@ int htp_hdrs_completecb(llhttp_t *htp) {
 }
 } // namespace
 
-int Http2Session::downstream_read_proxy(std::span<const uint8_t> data) {
+std::expected<void, Error>
+Http2Session::downstream_read_proxy(std::span<const uint8_t> data) {
   auto htperr = llhttp_execute(
     proxy_htp_.get(), reinterpret_cast<const char *>(data.data()), data.size());
   if (htperr == HPE_PAUSED) {
     switch (state_) {
     case Http2SessionState::PROXY_CONNECTED:
       // Initiate SSL/TLS handshake through established tunnel.
-      if (initiate_connection() != 0) {
-        return -1;
+      if (auto rv = initiate_connection(); !rv) {
+        return rv;
       }
-      return 0;
+      return {};
     case Http2SessionState::PROXY_FAILED:
-      return -1;
+      return std::unexpected{Error::INTERNAL};
     default:
       break;
     }
@@ -660,13 +654,13 @@ int Http2Session::downstream_read_proxy(std::span<const uint8_t> data) {
   }
 
   if (htperr != HPE_OK) {
-    return -1;
+    return std::unexpected{Error::HTTP1};
   }
 
-  return 0;
+  return {};
 }
 
-int Http2Session::downstream_connect_proxy() {
+std::expected<void, Error> Http2Session::downstream_connect_proxy() {
   if (log_enabled(INFO)) {
     Log{INFO, this} << "Connected to the proxy";
   }
@@ -695,7 +689,7 @@ int Http2Session::downstream_connect_proxy() {
   on_write_ = &Http2Session::write_noop;
 
   signal_write();
-  return 0;
+  return {};
 }
 
 void Http2Session::add_downstream_connection(Http2DownstreamConnection *dconn) {
@@ -1058,8 +1052,8 @@ int on_begin_headers_callback(nghttp2_session *session,
     assert(downstream);
     assert(downstream->get_downstream_stream_id() == frame->hd.stream_id);
 
-    if (http2session->handle_downstream_push_promise(downstream,
-                                                     promised_stream_id) != 0) {
+    if (!http2session->handle_downstream_push_promise(downstream,
+                                                      promised_stream_id)) {
       http2session->submit_rst_stream(promised_stream_id, NGHTTP2_CANCEL);
       return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
     }
@@ -1356,8 +1350,8 @@ int on_frame_recv_callback(nghttp2_session *session, const nghttp2_frame *frame,
 
     assert(promised_downstream);
 
-    if (http2session->handle_downstream_push_promise_complete(
-          downstream, promised_downstream) != 0) {
+    if (!http2session->handle_downstream_push_promise_complete(
+          downstream, promised_downstream)) {
       http2session->submit_rst_stream(promised_stream_id, NGHTTP2_CANCEL);
       return 0;
     }
@@ -1640,7 +1634,7 @@ nghttp2_session_callbacks *create_http2_downstream_callbacks() {
   return callbacks;
 }
 
-int Http2Session::connection_made() {
+std::expected<void, Error> Http2Session::connection_made() {
   int rv;
 
   state_ = Http2SessionState::CONNECTED;
@@ -1656,7 +1650,7 @@ int Http2Session::connection_made() {
 
     if (!next_proto) {
       downstream_failure(addr_, raddr_);
-      return -1;
+      return std::unexpected{Error::ALPN};
     }
 
     auto proto = as_string_view(next_proto, next_proto_len);
@@ -1665,7 +1659,7 @@ int Http2Session::connection_made() {
     }
     if (!util::check_h2_is_selected(proto)) {
       downstream_failure(addr_, raddr_);
-      return -1;
+      return std::unexpected{Error::ALPN};
     }
   }
 
@@ -1676,7 +1670,7 @@ int Http2Session::connection_made() {
                                    this, http2conf.downstream.option);
 
   if (rv != 0) {
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   std::array<nghttp2_settings_entry, 5> entry;
@@ -1708,14 +1702,14 @@ int Http2Session::connection_made() {
   rv =
     nghttp2_submit_settings(session_, NGHTTP2_FLAG_NONE, entry.data(), nentry);
   if (rv != 0) {
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   rv = nghttp2_session_set_local_window_size(
     session_, NGHTTP2_FLAG_NONE, 0,
     http2conf.downstream.connection_window_size);
   if (rv != 0) {
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   reset_connection_check_timer(CONNCHK_TIMEOUT);
@@ -1723,24 +1717,26 @@ int Http2Session::connection_made() {
   submit_pending_requests();
 
   signal_write();
-  return 0;
+  return {};
 }
 
 std::expected<void, Error> Http2Session::do_read() { return read_(*this); }
 std::expected<void, Error> Http2Session::do_write() { return write_(*this); }
 
-int Http2Session::on_read(std::span<const uint8_t> data) {
+std::expected<void, Error>
+Http2Session::on_read(std::span<const uint8_t> data) {
   return on_read_(*this, data);
 }
 
-int Http2Session::on_write() { return on_write_(*this); }
+std::expected<void, Error> Http2Session::on_write() { return on_write_(*this); }
 
-int Http2Session::downstream_read(std::span<const uint8_t> data) {
+std::expected<void, Error>
+Http2Session::downstream_read(std::span<const uint8_t> data) {
   auto rv = nghttp2_session_mem_recv2(session_, data.data(), data.size());
   if (rv < 0) {
     Log{ERROR, this} << "nghttp2_session_mem_recv2() returned error: "
                      << nghttp2_strerror(static_cast<int>(rv));
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   if (nghttp2_session_want_read(session_) == 0 &&
@@ -1748,21 +1744,21 @@ int Http2Session::downstream_read(std::span<const uint8_t> data) {
     if (log_enabled(INFO)) {
       Log{INFO, this} << "No more read/write for this HTTP2 session";
     }
-    return -1;
+    return std::unexpected{Error::DONE};
   }
 
   signal_write();
-  return 0;
+  return {};
 }
 
-int Http2Session::downstream_write() {
+std::expected<void, Error> Http2Session::downstream_write() {
   for (;;) {
     const uint8_t *data;
     auto datalen = nghttp2_session_mem_send2(session_, &data);
     if (datalen < 0) {
       Log{ERROR, this} << "nghttp2_session_mem_send2() returned error: "
                        << nghttp2_strerror(static_cast<int>(datalen));
-      return -1;
+      return std::unexpected{Error::HTTP2};
     }
     if (datalen == 0) {
       break;
@@ -1779,10 +1775,10 @@ int Http2Session::downstream_write() {
     if (log_enabled(INFO)) {
       Log{INFO, this} << "No more read/write for this session";
     }
-    return -1;
+    return std::unexpected{Error::DONE};
   }
 
-  return 0;
+  return {};
 }
 
 void Http2Session::signal_write() {
@@ -1815,13 +1811,14 @@ Http2SessionState Http2Session::get_state() const { return state_; }
 
 void Http2Session::set_state(Http2SessionState state) { state_ = state; }
 
-int Http2Session::terminate_session(uint32_t error_code) {
+std::expected<void, Error>
+Http2Session::terminate_session(uint32_t error_code) {
   int rv;
   rv = nghttp2_session_terminate_session(session_, error_code);
   if (rv != 0) {
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
-  return 0;
+  return {};
 }
 
 SSL *Http2Session::get_ssl() const { return conn_.tls.ssl; }
@@ -1938,10 +1935,6 @@ ConnectionCheck Http2Session::get_connection_check_state() const {
   return connection_check_state_;
 }
 
-int Http2Session::read_noop(std::span<const uint8_t> data) { return 0; }
-
-int Http2Session::write_noop() { return 0; }
-
 std::expected<void, Error> Http2Session::connected() {
   auto sock_error = util::get_socket_error(conn_.fd);
   if (sock_error != 0) {
@@ -1979,9 +1972,9 @@ std::expected<void, Error> Http2Session::connected() {
     return do_write();
   }
 
-  if (connection_made() != 0) {
+  if (auto rv = connection_made(); !rv) {
     state_ = Http2SessionState::CONNECT_FAILING;
-    return std::unexpected{Error::INTERNAL};
+    return rv;
   }
 
   return {};
@@ -2004,8 +1997,8 @@ std::expected<void, Error> Http2Session::read_clear() {
       return write_clear();
     }
 
-    if (on_read(data) != 0) {
-      return std::unexpected{Error::INTERNAL};
+    if (auto rv = on_read(data); !rv) {
+      return rv;
     }
   }
 }
@@ -2018,8 +2011,8 @@ std::expected<void, Error> Http2Session::write_clear() {
   for (;;) {
     auto iov = wb_.riovec(iovbuf);
     if (iov.empty()) {
-      if (on_write() != 0) {
-        return std::unexpected{Error::INTERNAL};
+      if (auto rv = on_write(); !rv) {
+        return rv;
       }
 
       iov = wb_.riovec(iovbuf);
@@ -2081,9 +2074,9 @@ std::expected<void, Error> Http2Session::tls_handshake() {
   read_ = &Http2Session::read_tls;
   write_ = &Http2Session::write_tls;
 
-  if (connection_made() != 0) {
+  if (auto rv = connection_made(); !rv) {
     state_ = Http2SessionState::CONNECT_FAILING;
-    return std::unexpected{Error::INTERNAL};
+    return rv;
   }
 
   return {};
@@ -2108,8 +2101,8 @@ std::expected<void, Error> Http2Session::read_tls() {
       return write_tls();
     }
 
-    if (on_read(data) != 0) {
-      return std::unexpected{Error::INTERNAL};
+    if (auto rv = on_read(data); !rv) {
+      return rv;
     }
   }
 }
@@ -2122,8 +2115,8 @@ std::expected<void, Error> Http2Session::write_tls() {
   for (;;) {
     auto data = wb_.peek();
     if (data.empty()) {
-      if (on_write() != 0) {
-        return std::unexpected{Error::INTERNAL};
+      if (auto rv = on_write(); !rv) {
+        return rv;
       }
 
       data = wb_.peek();
@@ -2178,17 +2171,18 @@ bool Http2Session::should_hard_fail() const {
 
 DownstreamAddr *Http2Session::get_addr() const { return addr_; }
 
-int Http2Session::handle_downstream_push_promise(Downstream *downstream,
-                                                 int32_t promised_stream_id) {
+std::expected<void, Error>
+Http2Session::handle_downstream_push_promise(Downstream *downstream,
+                                             int32_t promised_stream_id) {
   auto upstream = downstream->get_upstream();
   if (!upstream->push_enabled()) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   auto promised_downstream =
     upstream->on_downstream_push_promise(downstream, promised_stream_id);
   if (!promised_downstream) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   // Now we have Downstream object for pushed stream.
@@ -2201,9 +2195,10 @@ int Http2Session::handle_downstream_push_promise(Downstream *downstream,
 
   auto ptr = promised_dconn.get();
 
-  if (!promised_downstream->attach_downstream_connection(
-        std::move(promised_dconn))) {
-    return -1;
+  if (auto rv = promised_downstream->attach_downstream_connection(
+        std::move(promised_dconn));
+      !rv) {
+    return rv;
   }
 
   auto promised_sd = std::make_unique<StreamData>();
@@ -2214,10 +2209,11 @@ int Http2Session::handle_downstream_push_promise(Downstream *downstream,
   ptr->attach_stream_data(promised_sd.get());
   streams_.append(promised_sd.release());
 
-  return 0;
+  return {};
 }
 
-int Http2Session::handle_downstream_push_promise_complete(
+std::expected<void, Error>
+Http2Session::handle_downstream_push_promise_complete(
   Downstream *downstream, Downstream *promised_downstream) {
   auto &promised_req = promised_downstream->request();
 
@@ -2238,7 +2234,7 @@ int Http2Session::handle_downstream_push_promise_complete(
       Log{INFO, this} << "Unrecognized method: " << method->value;
     }
 
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   // TODO Rewrite authority if we enabled rewrite host.  But we
@@ -2268,10 +2264,10 @@ int Http2Session::handle_downstream_push_promise_complete(
 
   if (upstream->on_downstream_push_promise_complete(downstream,
                                                     promised_downstream) != 0) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
-  return 0;
+  return {};
 }
 
 size_t Http2Session::get_num_dconns() const { return dconns_.size(); }
