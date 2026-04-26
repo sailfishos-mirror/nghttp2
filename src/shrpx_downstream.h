@@ -390,7 +390,7 @@ public:
   void set_chunked_request(bool f);
   std::expected<void, Error>
   push_upload_data_chunk(std::span<const uint8_t> data);
-  int end_upload_data();
+  std::expected<void, Error> end_upload_data();
   // Validates that received request body length and content-length
   // matches.
   bool validate_request_recv_body_length() const;

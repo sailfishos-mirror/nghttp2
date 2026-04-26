@@ -53,8 +53,6 @@ void NullDownstreamConnection::detach_downstream(Downstream *downstream) {
   downstream_ = nullptr;
 }
 
-int NullDownstreamConnection::end_upload_data() { return 0; }
-
 void NullDownstreamConnection::pause_read(IOCtrlReason reason) {}
 
 int NullDownstreamConnection::resume_read(IOCtrlReason reason,

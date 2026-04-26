@@ -2401,11 +2401,8 @@ void Http3Upstream::initiate_downstream(Downstream *downstream) {
   downstream_queue_.mark_active(downstream);
 
   auto &req = downstream->request();
-  if (!req.http2_expect_body) {
-    rv = downstream->end_upload_data();
-    if (rv != 0) {
-      shutdown_stream(downstream, NGHTTP3_H3_INTERNAL_ERROR);
-    }
+  if (!req.http2_expect_body && !downstream->end_upload_data()) {
+    shutdown_stream(downstream, NGHTTP3_H3_INTERNAL_ERROR);
   }
 }
 
@@ -2461,10 +2458,9 @@ int http_end_stream(nghttp3_conn *conn, int64_t stream_id, void *user_data,
 int Http3Upstream::http_end_stream(Downstream *downstream) {
   downstream->disable_upstream_rtimer();
 
-  if (downstream->end_upload_data() != 0) {
-    if (downstream->get_response_state() != DownstreamState::MSG_COMPLETE) {
-      shutdown_stream(downstream, NGHTTP3_H3_INTERNAL_ERROR);
-    }
+  if (!downstream->end_upload_data() &&
+      downstream->get_response_state() != DownstreamState::MSG_COMPLETE) {
+    shutdown_stream(downstream, NGHTTP3_H3_INTERNAL_ERROR);
   }
 
   downstream->set_request_state(DownstreamState::MSG_COMPLETE);

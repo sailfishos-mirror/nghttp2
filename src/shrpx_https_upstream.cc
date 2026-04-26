@@ -581,7 +581,6 @@ int htp_bodycb(llhttp_t *htp, const char *data, size_t len) {
 
 namespace {
 int htp_msg_completecb(llhttp_t *htp) {
-  int rv;
   auto upstream = static_cast<HttpsUpstream *>(htp->data);
   if (log_enabled(INFO)) {
     Log{INFO, upstream} << "HTTP request completed";
@@ -596,8 +595,7 @@ int htp_msg_completecb(llhttp_t *htp) {
   }
 
   downstream->set_request_state(DownstreamState::MSG_COMPLETE);
-  rv = downstream->end_upload_data();
-  if (rv != 0) {
+  if (!downstream->end_upload_data()) {
     if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
       // Here both response and request were completed.  One of the
       // reason why end_upload_data() failed is when we sent response

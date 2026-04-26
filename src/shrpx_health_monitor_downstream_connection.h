@@ -43,7 +43,7 @@ public:
   push_upload_data_chunk(std::span<const uint8_t> data) override {
     return {};
   }
-  int end_upload_data() override;
+  std::expected<void, Error> end_upload_data() override;
 
   void pause_read(IOCtrlReason reason) override;
   int resume_read(IOCtrlReason reason, size_t consumed) override;

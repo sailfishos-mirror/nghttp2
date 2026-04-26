@@ -766,24 +766,24 @@ std::expected<void, Error> HttpDownstreamConnection::push_upload_data_chunk(
   return {};
 }
 
-int HttpDownstreamConnection::end_upload_data() {
+std::expected<void, Error> HttpDownstreamConnection::end_upload_data() {
   if (!downstream_->get_request_header_sent()) {
     downstream_->set_blocked_request_data_eof(true);
     if (request_header_written_) {
       signal_write();
     }
-    return 0;
+    return {};
   }
 
   signal_write();
 
   if (!downstream_->get_chunked_request()) {
-    return 0;
+    return {};
   }
 
   end_upload_data_chunk();
 
-  return 0;
+  return {};
 }
 
 void HttpDownstreamConnection::end_upload_data_chunk() {

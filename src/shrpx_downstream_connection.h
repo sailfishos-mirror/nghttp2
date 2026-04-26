@@ -55,7 +55,7 @@ public:
   virtual std::expected<void, Error> push_request_headers() = 0;
   virtual std::expected<void, Error>
   push_upload_data_chunk(std::span<const uint8_t> data) = 0;
-  virtual int end_upload_data() = 0;
+  virtual std::expected<void, Error> end_upload_data() = 0;
 
   virtual void pause_read(IOCtrlReason reason) = 0;
   virtual int resume_read(IOCtrlReason reason, size_t consumed) = 0;

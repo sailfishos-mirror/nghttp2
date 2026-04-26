@@ -538,22 +538,22 @@ std::expected<void, Error> Http2DownstreamConnection::push_upload_data_chunk(
   return {};
 }
 
-int Http2DownstreamConnection::end_upload_data() {
+std::expected<void, Error> Http2DownstreamConnection::end_upload_data() {
   if (!downstream_->get_request_header_sent()) {
     downstream_->set_blocked_request_data_eof(true);
-    return 0;
+    return {};
   }
 
   if (downstream_->get_downstream_stream_id() != -1) {
-    if (!http2session_->resume_data(this)) {
-      return -1;
+    if (auto rv = http2session_->resume_data(this); !rv) {
+      return rv;
     }
 
     downstream_->ensure_downstream_wtimer();
 
     http2session_->signal_write();
   }
-  return 0;
+  return {};
 }
 
 int Http2DownstreamConnection::resume_read(IOCtrlReason reason,

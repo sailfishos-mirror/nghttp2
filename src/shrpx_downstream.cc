@@ -707,14 +707,14 @@ Downstream::push_upload_data_chunk(std::span<const uint8_t> data) {
   return {};
 }
 
-int Downstream::end_upload_data() {
+std::expected<void, Error> Downstream::end_upload_data() {
   if (!dconn_ && !request_header_sent_) {
     blocked_request_data_eof_ = true;
-    return 0;
+    return {};
   }
   if (!dconn_) {
     Log{INFO, this} << "dconn_ is NULL";
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
   return dconn_->end_upload_data();
 }

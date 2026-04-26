@@ -64,7 +64,8 @@ HealthMonitorDownstreamConnection::push_request_headers() {
   return {};
 }
 
-int HealthMonitorDownstreamConnection::end_upload_data() {
+std::expected<void, Error>
+HealthMonitorDownstreamConnection::end_upload_data() {
   auto upstream = downstream_->get_upstream();
   auto &resp = downstream_->response();
 
@@ -74,10 +75,10 @@ int HealthMonitorDownstreamConnection::end_upload_data() {
                            http2::HD_CONTENT_LENGTH);
 
   if (upstream->send_reply(downstream_, {}) != 0) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
-  return 0;
+  return {};
 }
 
 void HealthMonitorDownstreamConnection::pause_read(IOCtrlReason reason) {}

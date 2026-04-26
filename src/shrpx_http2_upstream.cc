@@ -507,11 +507,8 @@ void Http2Upstream::initiate_downstream(Downstream *downstream) {
   downstream_queue_.mark_active(downstream);
 
   auto &req = downstream->request();
-  if (!req.http2_expect_body) {
-    rv = downstream->end_upload_data();
-    if (rv != 0) {
-      rst_stream(downstream, NGHTTP2_INTERNAL_ERROR);
-    }
+  if (!req.http2_expect_body && !downstream->end_upload_data()) {
+    rst_stream(downstream, NGHTTP2_INTERNAL_ERROR);
   }
 
   return;
@@ -537,10 +534,9 @@ int on_frame_recv_callback(nghttp2_session *session, const nghttp2_frame *frame,
     if (frame->hd.flags & NGHTTP2_FLAG_END_STREAM) {
       downstream->disable_upstream_rtimer();
 
-      if (downstream->end_upload_data() != 0) {
-        if (downstream->get_response_state() != DownstreamState::MSG_COMPLETE) {
-          upstream->rst_stream(downstream, NGHTTP2_INTERNAL_ERROR);
-        }
+      if (!downstream->end_upload_data() &&
+          downstream->get_response_state() != DownstreamState::MSG_COMPLETE) {
+        upstream->rst_stream(downstream, NGHTTP2_INTERNAL_ERROR);
       }
 
       downstream->set_request_state(DownstreamState::MSG_COMPLETE);
@@ -566,10 +562,9 @@ int on_frame_recv_callback(nghttp2_session *session, const nghttp2_frame *frame,
     if (frame->hd.flags & NGHTTP2_FLAG_END_STREAM) {
       downstream->disable_upstream_rtimer();
 
-      if (downstream->end_upload_data() != 0) {
-        if (downstream->get_response_state() != DownstreamState::MSG_COMPLETE) {
-          upstream->rst_stream(downstream, NGHTTP2_INTERNAL_ERROR);
-        }
+      if (!downstream->end_upload_data() &&
+          downstream->get_response_state() != DownstreamState::MSG_COMPLETE) {
+        upstream->rst_stream(downstream, NGHTTP2_INTERNAL_ERROR);
       }
 
       downstream->set_request_state(DownstreamState::MSG_COMPLETE);

@@ -330,28 +330,28 @@ APIDownstreamConnection::push_upload_data_chunk(std::span<const uint8_t> data) {
   return {};
 }
 
-int APIDownstreamConnection::end_upload_data() {
+std::expected<void, Error> APIDownstreamConnection::end_upload_data() {
   if (shutdown_read_) {
-    return 0;
+    return {};
   }
 
   return api_->handler(*this);
 }
 
-int APIDownstreamConnection::handle_backendconfig() {
+std::expected<void, Error> APIDownstreamConnection::handle_backendconfig() {
   auto &req = downstream_->request();
 
   if (req.recv_body_length == 0) {
     send_reply(200, APIStatusCode::SUCCESS);
 
-    return 0;
+    return {};
   }
 
   auto rp = mmap(nullptr, static_cast<size_t>(req.recv_body_length), PROT_READ,
                  MAP_SHARED, fd_, 0);
   if (rp == reinterpret_cast<void *>(-1)) {
     send_reply(500, APIStatusCode::FAILURE);
-    return 0;
+    return {};
   }
 
   auto unmapper = defer([rp, size = req.recv_body_length] {
@@ -391,7 +391,7 @@ int APIDownstreamConnection::handle_backendconfig() {
     auto eq = std::ranges::find(first, eol, '=');
     if (eq == eol) {
       send_reply(400, APIStatusCode::FAILURE);
-      return 0;
+      return {};
     }
 
     auto opt = std::string_view{first, eq};
@@ -410,7 +410,7 @@ int APIDownstreamConnection::handle_backendconfig() {
     if (parse_config(&new_config, optid, opt, optval, include_set,
                      pattern_addr_indexer) != 0) {
       send_reply(400, APIStatusCode::FAILURE);
-      return 0;
+      return {};
     }
 
     first = ++eol;
@@ -420,7 +420,7 @@ int APIDownstreamConnection::handle_backendconfig() {
   if (configure_downstream_group(&new_config, config->http2_proxy, true,
                                  tlsconf) != 0) {
     send_reply(400, APIStatusCode::FAILURE);
-    return 0;
+    return {};
   }
 
   auto conn_handler = worker_->get_connection_handler();
@@ -429,10 +429,10 @@ int APIDownstreamConnection::handle_backendconfig() {
 
   send_reply(200, APIStatusCode::SUCCESS);
 
-  return 0;
+  return {};
 }
 
-int APIDownstreamConnection::handle_configrevision() {
+std::expected<void, Error> APIDownstreamConnection::handle_configrevision() {
   auto config = get_config();
   auto &balloc = downstream_->get_block_allocator();
 
@@ -447,7 +447,7 @@ int APIDownstreamConnection::handle_configrevision() {
 
   send_reply(200, APIStatusCode::SUCCESS, data);
 
-  return 0;
+  return {};
 }
 
 void APIDownstreamConnection::pause_read(IOCtrlReason reason) {}
