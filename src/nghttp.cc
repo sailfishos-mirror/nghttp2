@@ -2188,9 +2188,9 @@ int communicate(
                 << ERR_error_string(ERR_get_error(), nullptr) << std::endl;
     }
 
-    if (nghttp2::tls::ssl_ctx_set_proto_versions(
+    if (!nghttp2::tls::ssl_ctx_set_proto_versions(
           ssl_ctx, nghttp2::tls::NGHTTP2_TLS_MIN_VERSION,
-          nghttp2::tls::NGHTTP2_TLS_MAX_VERSION) != 0) {
+          nghttp2::tls::NGHTTP2_TLS_MAX_VERSION)) {
       std::cerr << "[ERROR] Could not set TLS versions" << std::endl;
       result = -1;
       goto fin;
@@ -2249,7 +2249,7 @@ int communicate(
 #endif // defined(NGHTTP2_OPENSSL_IS_BORINGSSL) &&
        // defined(HAVE_LIBBROTLI)
 
-    if (tls::setup_keylog_callback(ssl_ctx) != 0) {
+    if (!tls::setup_keylog_callback(ssl_ctx)) {
       std::cerr << "[ERROR] Failed to setup keylog" << std::endl;
 
       result = -1;
