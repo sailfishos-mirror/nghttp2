@@ -1052,8 +1052,8 @@ int on_begin_headers_callback(nghttp2_session *session,
     assert(downstream);
     assert(downstream->get_downstream_stream_id() == frame->hd.stream_id);
 
-    if (http2session->handle_downstream_push_promise(downstream,
-                                                     promised_stream_id) != 0) {
+    if (!http2session->handle_downstream_push_promise(downstream,
+                                                      promised_stream_id)) {
       http2session->submit_rst_stream(promised_stream_id, NGHTTP2_CANCEL);
       return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
     }
@@ -1350,8 +1350,8 @@ int on_frame_recv_callback(nghttp2_session *session, const nghttp2_frame *frame,
 
     assert(promised_downstream);
 
-    if (http2session->handle_downstream_push_promise_complete(
-          downstream, promised_downstream) != 0) {
+    if (!http2session->handle_downstream_push_promise_complete(
+          downstream, promised_downstream)) {
       http2session->submit_rst_stream(promised_stream_id, NGHTTP2_CANCEL);
       return 0;
     }
@@ -2171,17 +2171,18 @@ bool Http2Session::should_hard_fail() const {
 
 DownstreamAddr *Http2Session::get_addr() const { return addr_; }
 
-int Http2Session::handle_downstream_push_promise(Downstream *downstream,
-                                                 int32_t promised_stream_id) {
+std::expected<void, Error>
+Http2Session::handle_downstream_push_promise(Downstream *downstream,
+                                             int32_t promised_stream_id) {
   auto upstream = downstream->get_upstream();
   if (!upstream->push_enabled()) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   auto promised_downstream =
     upstream->on_downstream_push_promise(downstream, promised_stream_id);
   if (!promised_downstream) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   // Now we have Downstream object for pushed stream.
@@ -2194,9 +2195,10 @@ int Http2Session::handle_downstream_push_promise(Downstream *downstream,
 
   auto ptr = promised_dconn.get();
 
-  if (!promised_downstream->attach_downstream_connection(
-        std::move(promised_dconn))) {
-    return -1;
+  if (auto rv = promised_downstream->attach_downstream_connection(
+        std::move(promised_dconn));
+      !rv) {
+    return rv;
   }
 
   auto promised_sd = std::make_unique<StreamData>();
@@ -2207,10 +2209,11 @@ int Http2Session::handle_downstream_push_promise(Downstream *downstream,
   ptr->attach_stream_data(promised_sd.get());
   streams_.append(promised_sd.release());
 
-  return 0;
+  return {};
 }
 
-int Http2Session::handle_downstream_push_promise_complete(
+std::expected<void, Error>
+Http2Session::handle_downstream_push_promise_complete(
   Downstream *downstream, Downstream *promised_downstream) {
   auto &promised_req = promised_downstream->request();
 
@@ -2231,7 +2234,7 @@ int Http2Session::handle_downstream_push_promise_complete(
       Log{INFO, this} << "Unrecognized method: " << method->value;
     }
 
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   // TODO Rewrite authority if we enabled rewrite host.  But we
@@ -2261,10 +2264,10 @@ int Http2Session::handle_downstream_push_promise_complete(
 
   if (upstream->on_downstream_push_promise_complete(downstream,
                                                     promised_downstream) != 0) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
-  return 0;
+  return {};
 }
 
 size_t Http2Session::get_num_dconns() const { return dconns_.size(); }
