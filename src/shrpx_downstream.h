@@ -106,9 +106,8 @@ public:
 
   bool header_key_prev() const { return header_key_prev_; }
 
-  // Parses content-length, and records it in the field.  If there are
-  // multiple Content-Length, returns -1.
-  int parse_content_length();
+  // Parses content-length, and records it in the field.
+  std::expected<void, Error> parse_content_length();
 
   // Empties headers.
   void clear_headers();
@@ -342,7 +341,8 @@ public:
   void set_downstream_stream_id(int64_t stream_id);
   int64_t get_downstream_stream_id() const;
 
-  int attach_downstream_connection(std::unique_ptr<DownstreamConnection> dconn);
+  std::expected<void, Error>
+  attach_downstream_connection(std::unique_ptr<DownstreamConnection> dconn);
   void detach_downstream_connection();
   DownstreamConnection *get_downstream_connection();
   // Returns dconn_ and nullifies dconn_.

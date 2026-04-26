@@ -119,8 +119,7 @@ void retry_downstream_connection(Downstream *downstream,
 
       return;
     }
-    if (downstream->attach_downstream_connection(std::move(*maybe_dconn)) !=
-        0) {
+    if (!downstream->attach_downstream_connection(std::move(*maybe_dconn))) {
       continue;
     }
     if (downstream->push_request_headers()) {
@@ -946,7 +945,7 @@ int htp_hdrs_completecb(llhttp_t *htp) {
 
     // Calling parse_content_length() detects duplicated
     // content-length header fields.
-    if (resp.fs.parse_content_length() != 0) {
+    if (!resp.fs.parse_content_length()) {
       return -1;
     }
     if (resp.fs.content_length == 0) {
@@ -959,7 +958,7 @@ int htp_hdrs_completecb(llhttp_t *htp) {
     // Server MUST NOT send Content-Length and Transfer-Encoding in
     // these responses.
     resp.fs.erase_content_length_and_transfer_encoding();
-  } else if (resp.fs.parse_content_length() != 0) {
+  } else if (!resp.fs.parse_content_length()) {
     downstream->set_response_state(DownstreamState::MSG_BAD_HEADER);
     return -1;
   }

@@ -246,15 +246,15 @@ Downstream::~Downstream() {
   }
 }
 
-int Downstream::attach_downstream_connection(
+std::expected<void, Error> Downstream::attach_downstream_connection(
   std::unique_ptr<DownstreamConnection> dconn) {
-  if (!dconn->attach_downstream(this)) {
-    return -1;
+  if (auto rv = dconn->attach_downstream(this); !rv) {
+    return rv;
   }
 
   dconn_ = std::move(dconn);
 
-  return 0;
+  return {};
 }
 
 void Downstream::detach_downstream_connection() {
@@ -511,7 +511,7 @@ void append_last_header_value(BlockAllocator &balloc, bool &key_prev,
 }
 } // namespace
 
-int FieldStore::parse_content_length() {
+std::expected<void, Error> FieldStore::parse_content_length() {
   content_length = -1;
 
   for (auto &kv : headers_) {
@@ -519,16 +519,16 @@ int FieldStore::parse_content_length() {
       continue;
     }
 
-    auto len = util::parse_uint(kv.value);
-    if (!len) {
-      return -1;
+    auto maybe_cl = util::parse_uint(kv.value);
+    if (!maybe_cl) {
+      return std::unexpected{maybe_cl.error()};
     }
     if (content_length != -1) {
-      return -1;
+      return std::unexpected{Error::HTTP};
     }
-    content_length = static_cast<int64_t>(*len);
+    content_length = static_cast<int64_t>(*maybe_cl);
   }
-  return 0;
+  return {};
 }
 
 const HeaderRefs::value_type *FieldStore::header(int32_t token) const {

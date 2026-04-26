@@ -1575,8 +1575,7 @@ int Http3Upstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
       goto fail;
     }
 
-    if (downstream->attach_downstream_connection(std::move(*maybe_dconn)) ==
-        0) {
+    if (downstream->attach_downstream_connection(std::move(*maybe_dconn))) {
       break;
     }
   }
@@ -2362,8 +2361,7 @@ void Http3Upstream::initiate_downstream(Downstream *downstream) {
 #ifdef HAVE_MRUBY
     dconn_ptr = dconn.get();
 #endif // defined(HAVE_MRUBY)
-    rv = downstream->attach_downstream_connection(std::move(dconn));
-    if (rv == 0) {
+    if (downstream->attach_downstream_connection(std::move(dconn))) {
       break;
     }
   }
