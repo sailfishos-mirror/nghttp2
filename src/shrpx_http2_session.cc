@@ -100,7 +100,7 @@ void settings_timeout_cb(struct ev_loop *loop, ev_timer *w, int revents) {
 
   downstream_failure(http2session->get_addr(), http2session->get_raddr());
 
-  if (http2session->terminate_session(NGHTTP2_SETTINGS_TIMEOUT) != 0) {
+  if (!http2session->terminate_session(NGHTTP2_SETTINGS_TIMEOUT)) {
     delete http2session;
 
     return;
@@ -1808,13 +1808,14 @@ Http2SessionState Http2Session::get_state() const { return state_; }
 
 void Http2Session::set_state(Http2SessionState state) { state_ = state; }
 
-int Http2Session::terminate_session(uint32_t error_code) {
+std::expected<void, Error>
+Http2Session::terminate_session(uint32_t error_code) {
   int rv;
   rv = nghttp2_session_terminate_session(session_, error_code);
   if (rv != 0) {
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
-  return 0;
+  return {};
 }
 
 SSL *Http2Session::get_ssl() const { return conn_.tls.ssl; }

@@ -131,7 +131,7 @@ public:
   std::expected<void, Error> submit_rst_stream(int32_t stream_id,
                                                uint32_t error_code);
 
-  int terminate_session(uint32_t error_code);
+  std::expected<void, Error> terminate_session(uint32_t error_code);
 
   nghttp2_session *get_session() const;
 
