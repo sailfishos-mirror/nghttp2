@@ -93,7 +93,8 @@ Http2DownstreamConnection::~Http2DownstreamConnection() {
   }
 }
 
-int Http2DownstreamConnection::attach_downstream(Downstream *downstream) {
+std::expected<void, Error>
+Http2DownstreamConnection::attach_downstream(Downstream *downstream) {
   if (log_enabled(INFO)) {
     Log{INFO, this} << "Attaching to DOWNSTREAM:" << downstream;
   }
@@ -110,7 +111,7 @@ int Http2DownstreamConnection::attach_downstream(Downstream *downstream) {
     req.upgrade_request = false;
   }
 
-  return 0;
+  return {};
 }
 
 void Http2DownstreamConnection::detach_downstream(Downstream *downstream) {

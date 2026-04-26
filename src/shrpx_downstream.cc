@@ -248,7 +248,7 @@ Downstream::~Downstream() {
 
 int Downstream::attach_downstream_connection(
   std::unique_ptr<DownstreamConnection> dconn) {
-  if (dconn->attach_downstream(this) != 0) {
+  if (!dconn->attach_downstream(this)) {
     return -1;
   }
 

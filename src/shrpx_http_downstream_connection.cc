@@ -235,22 +235,20 @@ HttpDownstreamConnection::~HttpDownstreamConnection() {
   }
 }
 
-int HttpDownstreamConnection::attach_downstream(Downstream *downstream) {
-  int rv;
-
+std::expected<void, Error>
+HttpDownstreamConnection::attach_downstream(Downstream *downstream) {
   if (log_enabled(INFO)) {
     Log{INFO, this} << "Attaching to DOWNSTREAM:" << downstream;
   }
 
   downstream_ = downstream;
 
-  rv = initiate_connection();
-  if (rv != 0) {
+  if (auto rv = initiate_connection(); !rv) {
     downstream_ = nullptr;
     return rv;
   }
 
-  return 0;
+  return {};
 }
 
 namespace {
@@ -271,7 +269,7 @@ constexpr llhttp_settings_t htp_hooks = {
   .on_message_complete = htp_msg_completecb,
 };
 
-int HttpDownstreamConnection::initiate_connection() {
+std::expected<void, Error> HttpDownstreamConnection::initiate_connection() {
   int rv;
 
   auto worker_blocker = worker_->get_connect_blocker();
@@ -280,7 +278,7 @@ int HttpDownstreamConnection::initiate_connection() {
       Log{INFO, this}
         << "Worker wide backend connection was blocked temporarily";
     }
-    return SHRPX_ERR_NETWORK;
+    return std::unexpected{Error::NETWORK};
   }
 
   auto &downstreamconf = *worker_->get_downstream_config();
@@ -300,7 +298,7 @@ int HttpDownstreamConnection::initiate_connection() {
                         << addr_->port << " was not available temporarily";
       }
 
-      return SHRPX_ERR_NETWORK;
+      return std::unexpected{Error::NETWORK};
     }
 
     Address *raddr;
@@ -309,14 +307,11 @@ int HttpDownstreamConnection::initiate_connection() {
       if (!check_dns_result) {
         auto dns_query = std::make_unique<DNSQuery>(
           addr_->host, [this](DNSResolverStatus status, const Address *result) {
-            int rv;
-
             if (status == DNSResolverStatus::OK) {
               *this->resolved_addr_ = *result;
             }
 
-            rv = this->initiate_connection();
-            if (rv != 0) {
+            if (!this->initiate_connection()) {
               // This callback destroys |this|.
               auto downstream = this->downstream_;
               backend_retry(downstream);
@@ -331,10 +326,10 @@ int HttpDownstreamConnection::initiate_connection() {
         switch (dns_tracker->resolve(resolved_addr_.get(), dns_query.get())) {
         case DNSResolverStatus::ERROR:
           downstream_failure(addr_, nullptr);
-          return SHRPX_ERR_NETWORK;
+          return std::unexpected{Error::NETWORK};
         case DNSResolverStatus::RUNNING:
           dns_query_ = std::move(dns_query);
-          return 0;
+          return {};
         case DNSResolverStatus::OK:
           break;
         default:
@@ -345,7 +340,7 @@ int HttpDownstreamConnection::initiate_connection() {
         case DNSResolverStatus::ERROR:
           dns_query_.reset();
           downstream_failure(addr_, nullptr);
-          return SHRPX_ERR_NETWORK;
+          return std::unexpected{Error::NETWORK};
         case DNSResolverStatus::OK:
           dns_query_.reset();
           break;
@@ -368,7 +363,7 @@ int HttpDownstreamConnection::initiate_connection() {
 
       worker_blocker->on_failure();
 
-      return SHRPX_ERR_NETWORK;
+      return std::unexpected{Error::NETWORK};
     }
 
     conn_.fd = *maybe_fd;
@@ -383,7 +378,7 @@ int HttpDownstreamConnection::initiate_connection() {
 
       downstream_failure(addr_, raddr);
 
-      return SHRPX_ERR_NETWORK;
+      return std::unexpected{Error::NETWORK};
     }
 
     if (log_enabled(INFO)) {
@@ -397,7 +392,7 @@ int HttpDownstreamConnection::initiate_connection() {
 
       auto ssl = tls::create_ssl(ssl_ctx_);
       if (!ssl) {
-        return -1;
+        return std::unexpected{Error::CRYPTO};
       }
 
       tls::setup_downstream_http1_alpn(ssl);
@@ -446,7 +441,7 @@ int HttpDownstreamConnection::initiate_connection() {
   llhttp_init(&response_htp_, HTTP_RESPONSE, &htp_hooks);
   response_htp_.data = downstream_;
 
-  return 0;
+  return {};
 }
 
 int HttpDownstreamConnection::push_request_headers() {

@@ -35,14 +35,15 @@ NullDownstreamConnection::NullDownstreamConnection(
 
 NullDownstreamConnection::~NullDownstreamConnection() {}
 
-int NullDownstreamConnection::attach_downstream(Downstream *downstream) {
+std::expected<void, Error>
+NullDownstreamConnection::attach_downstream(Downstream *downstream) {
   if (log_enabled(INFO)) {
     Log{INFO, this} << "Attaching to DOWNSTREAM:" << downstream;
   }
 
   downstream_ = downstream;
 
-  return 0;
+  return {};
 }
 
 void NullDownstreamConnection::detach_downstream(Downstream *downstream) {

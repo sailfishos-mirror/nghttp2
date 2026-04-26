@@ -47,7 +47,7 @@ public:
                            DownstreamAddr *addr, struct ev_loop *loop,
                            Worker *worker);
   ~HttpDownstreamConnection() override;
-  int attach_downstream(Downstream *downstream) override;
+  std::expected<void, Error> attach_downstream(Downstream *downstream) override;
   void detach_downstream(Downstream *downstream) override;
 
   int push_request_headers() override;
@@ -70,7 +70,7 @@ public:
   get_downstream_addr_group() const override;
   DownstreamAddr *get_addr() const override;
 
-  int initiate_connection();
+  std::expected<void, Error> initiate_connection();
 
   std::expected<void, Error> write_first();
   std::expected<void, Error> read_clear();

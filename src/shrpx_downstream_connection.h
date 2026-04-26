@@ -48,7 +48,8 @@ class DownstreamConnection {
 public:
   DownstreamConnection();
   virtual ~DownstreamConnection();
-  virtual int attach_downstream(Downstream *downstream) = 0;
+  virtual std::expected<void, Error>
+  attach_downstream(Downstream *downstream) = 0;
   virtual void detach_downstream(Downstream *downstream) = 0;
 
   virtual int push_request_headers() = 0;

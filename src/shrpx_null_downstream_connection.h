@@ -36,7 +36,7 @@ class NullDownstreamConnection : public DownstreamConnection {
 public:
   NullDownstreamConnection(const std::shared_ptr<DownstreamAddrGroup> &group);
   ~NullDownstreamConnection() override;
-  int attach_downstream(Downstream *downstream) override;
+  std::expected<void, Error> attach_downstream(Downstream *downstream) override;
   void detach_downstream(Downstream *downstream) override;
 
   int push_request_headers() override;

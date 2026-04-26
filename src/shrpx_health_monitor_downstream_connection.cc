@@ -35,15 +35,15 @@ HealthMonitorDownstreamConnection::HealthMonitorDownstreamConnection() {}
 
 HealthMonitorDownstreamConnection::~HealthMonitorDownstreamConnection() {}
 
-int HealthMonitorDownstreamConnection::attach_downstream(
-  Downstream *downstream) {
+std::expected<void, Error>
+HealthMonitorDownstreamConnection::attach_downstream(Downstream *downstream) {
   if (log_enabled(INFO)) {
     Log{INFO, this} << "Attaching to DOWNSTREAM:" << downstream;
   }
 
   downstream_ = downstream;
 
-  return 0;
+  return {};
 }
 
 void HealthMonitorDownstreamConnection::detach_downstream(

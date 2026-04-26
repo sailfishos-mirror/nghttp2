@@ -50,7 +50,7 @@ class Http2DownstreamConnection : public DownstreamConnection {
 public:
   Http2DownstreamConnection(Http2Session *http2session);
   ~Http2DownstreamConnection() override;
-  int attach_downstream(Downstream *downstream) override;
+  std::expected<void, Error> attach_downstream(Downstream *downstream) override;
   void detach_downstream(Downstream *downstream) override;
 
   int push_request_headers() override;
