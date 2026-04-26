@@ -1527,8 +1527,6 @@ void Http3Upstream::on_handler_delete() {
 }
 
 int Http3Upstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
-  int rv;
-
   if (downstream->get_dispatch_state() != DispatchState::ACTIVE) {
     // This is error condition when we failed push_request_headers()
     // in initiate_downstream().  Otherwise, we have
@@ -1561,7 +1559,7 @@ int Http3Upstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
 
   std::unique_ptr<DownstreamConnection> dconn;
 
-  rv = 0;
+  auto err = Error::INTERNAL;
 
   if (no_retry || downstream->no_more_retry()) {
     goto fail;
@@ -1571,32 +1569,32 @@ int Http3Upstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
   // downstream connection.
 
   for (;;) {
-    auto dconn = handler_->get_downstream_connection(rv, downstream);
-    if (!dconn) {
+    auto maybe_dconn = handler_->get_downstream_connection(downstream);
+    if (!maybe_dconn) {
+      err = maybe_dconn.error();
       goto fail;
     }
 
-    rv = downstream->attach_downstream_connection(std::move(dconn));
-    if (rv == 0) {
+    if (downstream->attach_downstream_connection(std::move(*maybe_dconn)) ==
+        0) {
       break;
     }
   }
 
-  rv = downstream->push_request_headers();
-  if (rv != 0) {
+  if (auto rv = downstream->push_request_headers(); !rv) {
+    err = rv.error();
     goto fail;
   }
 
   return 0;
 
 fail:
-  if (rv == SHRPX_ERR_TLS_REQUIRED) {
+  if (err == Error::TLS_REQUIRED) {
     assert(0);
     abort();
   }
 
-  rv = on_downstream_abort_request(downstream, 502);
-  if (rv != 0) {
+  if (on_downstream_abort_request(downstream, 502) != 0) {
     shutdown_stream(downstream, NGHTTP3_H3_INTERNAL_ERROR);
   }
   downstream->pop_downstream_connection();
@@ -2341,9 +2339,9 @@ void Http3Upstream::initiate_downstream(Downstream *downstream) {
 #endif // defined(HAVE_MRUBY)
 
   for (;;) {
-    auto dconn = handler_->get_downstream_connection(rv, downstream);
-    if (!dconn) {
-      if (rv == SHRPX_ERR_TLS_REQUIRED) {
+    auto maybe_dconn = handler_->get_downstream_connection(downstream);
+    if (!maybe_dconn) {
+      if (maybe_dconn.error() == Error::TLS_REQUIRED) {
         assert(0);
         abort();
       }
@@ -2358,6 +2356,8 @@ void Http3Upstream::initiate_downstream(Downstream *downstream) {
 
       return;
     }
+
+    auto dconn = std::move(*maybe_dconn);
 
 #ifdef HAVE_MRUBY
     dconn_ptr = dconn.get();
@@ -2388,8 +2388,7 @@ void Http3Upstream::initiate_downstream(Downstream *downstream) {
   }
 #endif // defined(HAVE_MRUBY)
 
-  rv = downstream->push_request_headers();
-  if (rv != 0) {
+  if (!downstream->push_request_headers()) {
     if (error_reply(downstream, 502) != 0) {
       shutdown_stream(downstream, NGHTTP3_H3_INTERNAL_ERROR);
     }

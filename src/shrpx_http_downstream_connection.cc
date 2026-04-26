@@ -99,31 +99,33 @@ void retry_downstream_connection(Downstream *downstream,
   auto buf = downstream->get_request_buf();
   buf->reset();
 
-  int rv;
-
   for (;;) {
-    auto ndconn = handler->get_downstream_connection(rv, downstream);
-    if (!ndconn) {
-      break;
-    }
-    if (downstream->attach_downstream_connection(std::move(ndconn)) != 0) {
-      continue;
-    }
-    if (downstream->push_request_headers() == 0) {
+    auto maybe_dconn = handler->get_downstream_connection(downstream);
+    if (!maybe_dconn) {
+      downstream->set_request_state(DownstreamState::CONNECT_FAIL);
+
+      int rv;
+
+      if (maybe_dconn.error() == Error::TLS_REQUIRED) {
+        rv =
+          upstream->on_downstream_abort_request_with_https_redirect(downstream);
+      } else {
+        rv = upstream->on_downstream_abort_request(downstream, status_code);
+      }
+
+      if (rv != 0) {
+        delete handler;
+      }
+
       return;
     }
-  }
-
-  downstream->set_request_state(DownstreamState::CONNECT_FAIL);
-
-  if (rv == SHRPX_ERR_TLS_REQUIRED) {
-    rv = upstream->on_downstream_abort_request_with_https_redirect(downstream);
-  } else {
-    rv = upstream->on_downstream_abort_request(downstream, status_code);
-  }
-
-  if (rv != 0) {
-    delete handler;
+    if (downstream->attach_downstream_connection(std::move(*maybe_dconn)) !=
+        0) {
+      continue;
+    }
+    if (downstream->push_request_headers()) {
+      return;
+    }
   }
 }
 } // namespace
@@ -444,10 +446,10 @@ std::expected<void, Error> HttpDownstreamConnection::initiate_connection() {
   return {};
 }
 
-int HttpDownstreamConnection::push_request_headers() {
+std::expected<void, Error> HttpDownstreamConnection::push_request_headers() {
   if (request_header_written_) {
     signal_write();
-    return 0;
+    return {};
   }
 
   const auto &req = downstream_->request();
@@ -536,7 +538,7 @@ int HttpDownstreamConnection::push_request_headers() {
     if (req.http_major == 3 || req.http_major == 2) {
       std::array<uint8_t, 16> nonce;
       if (RAND_bytes(nonce.data(), nonce.size()) != 1) {
-        return -1;
+        return std::unexpected{Error::CRYPTO};
       }
       auto iov = make_byte_ref(balloc, base64::encode_length(nonce.size()) + 1);
       auto p = base64::encode(nonce, std::ranges::begin(iov));
@@ -701,7 +703,7 @@ int HttpDownstreamConnection::push_request_headers() {
     signal_write();
   }
 
-  return 0;
+  return {};
 }
 
 int HttpDownstreamConnection::process_blocked_request_buf() {

@@ -53,8 +53,6 @@ void NullDownstreamConnection::detach_downstream(Downstream *downstream) {
   downstream_ = nullptr;
 }
 
-int NullDownstreamConnection::push_request_headers() { return 0; }
-
 int NullDownstreamConnection::push_upload_data_chunk(
   std::span<const uint8_t> data) {
   return 0;

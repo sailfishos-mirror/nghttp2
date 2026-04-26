@@ -122,8 +122,9 @@ public:
 
   void remove_stream_data(StreamData *sd);
 
-  int submit_request(Http2DownstreamConnection *dconn, const nghttp2_nv *nva,
-                     size_t nvlen, const nghttp2_data_provider2 *data_prd);
+  std::expected<void, Error>
+  submit_request(Http2DownstreamConnection *dconn, const nghttp2_nv *nva,
+                 size_t nvlen, const nghttp2_data_provider2 *data_prd);
 
   std::expected<void, Error> submit_rst_stream(int32_t stream_id,
                                                uint32_t error_code);

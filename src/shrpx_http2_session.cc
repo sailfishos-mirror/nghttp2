@@ -732,9 +732,10 @@ void Http2Session::remove_stream_data(StreamData *sd) {
   delete sd;
 }
 
-int Http2Session::submit_request(Http2DownstreamConnection *dconn,
-                                 const nghttp2_nv *nva, size_t nvlen,
-                                 const nghttp2_data_provider2 *data_prd) {
+std::expected<void, Error>
+Http2Session::submit_request(Http2DownstreamConnection *dconn,
+                             const nghttp2_nv *nva, size_t nvlen,
+                             const nghttp2_data_provider2 *data_prd) {
   assert(state_ == Http2SessionState::CONNECTED);
   auto sd = std::make_unique<StreamData>();
   sd->dlnext = sd->dlprev = nullptr;
@@ -744,14 +745,14 @@ int Http2Session::submit_request(Http2DownstreamConnection *dconn,
   if (stream_id < 0) {
     Log{FATAL, this} << "nghttp2_submit_request2() failed: "
                      << nghttp2_strerror(stream_id);
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   dconn->attach_stream_data(sd.get());
   dconn->get_downstream()->set_downstream_stream_id(stream_id);
   streams_.append(sd.release());
 
-  return 0;
+  return {};
 }
 
 std::expected<void, Error>
@@ -1913,7 +1914,7 @@ void Http2Session::submit_pending_requests() {
 
     auto upstream = downstream->get_upstream();
 
-    if (dconn->push_request_headers() != 0) {
+    if (!dconn->push_request_headers()) {
       if (log_enabled(INFO)) {
         Log{INFO, this} << "backend request failed";
       }

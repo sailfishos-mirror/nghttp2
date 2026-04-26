@@ -847,11 +847,9 @@ void reschedule_wg(
 }
 } // namespace
 
-DownstreamAddr *ClientHandler::get_downstream_addr(int &err,
-                                                   DownstreamAddrGroup *group,
-                                                   Downstream *downstream) {
-  err = 0;
-
+std::expected<DownstreamAddr *, Error>
+ClientHandler::get_downstream_addr(DownstreamAddrGroup *group,
+                                   Downstream *downstream) {
   switch (faddr_->alt_mode) {
   case UpstreamAltMode::API:
   case UpstreamAltMode::HEALTHMON:
@@ -875,8 +873,7 @@ DownstreamAddr *ClientHandler::get_downstream_addr(int &err,
     case SessionAffinity::COOKIE:
       if (shared_addr->affinity.cookie.stickiness ==
           SessionAffinityCookieStickiness::STRICT) {
-        return get_downstream_addr_strict_affinity(err, shared_addr,
-                                                   downstream);
+        return get_downstream_addr_strict_affinity(shared_addr, downstream);
       }
 
       hash = get_affinity_cookie(downstream, shared_addr->affinity.cookie.name);
@@ -911,8 +908,7 @@ DownstreamAddr *ClientHandler::get_downstream_addr(int &err,
         break;
       }
       if (i == aff_idx) {
-        err = -1;
-        return nullptr;
+        return std::unexpected{Error::NO_AVAIL_DOWNSTREAM};
       }
     }
 
@@ -924,8 +920,7 @@ DownstreamAddr *ClientHandler::get_downstream_addr(int &err,
   for (;;) {
     if (wgpq.empty()) {
       Log{INFO, this} << "No working downstream address found";
-      err = -1;
-      return nullptr;
+      return std::unexpected{Error::NO_AVAIL_DOWNSTREAM};
     }
 
     auto wg = wgpq.top().wg;
@@ -953,8 +948,9 @@ DownstreamAddr *ClientHandler::get_downstream_addr(int &err,
   }
 }
 
-DownstreamAddr *ClientHandler::get_downstream_addr_strict_affinity(
-  int &err, const std::shared_ptr<SharedDownstreamAddr> &shared_addr,
+std::expected<DownstreamAddr *, Error>
+ClientHandler::get_downstream_addr_strict_affinity(
+  const std::shared_ptr<SharedDownstreamAddr> &shared_addr,
   Downstream *downstream) {
   const auto &affinity_hash = shared_addr->affinity_hash;
 
@@ -1002,8 +998,7 @@ DownstreamAddr *ClientHandler::get_downstream_addr_strict_affinity(
       break;
     }
     if (i == aff_idx) {
-      err = -1;
-      return nullptr;
+      return std::unexpected{Error::NO_AVAIL_DOWNSTREAM};
     }
   }
 
@@ -1012,8 +1007,8 @@ DownstreamAddr *ClientHandler::get_downstream_addr_strict_affinity(
   return addr;
 }
 
-std::unique_ptr<DownstreamConnection>
-ClientHandler::get_downstream_connection(int &err, Downstream *downstream) {
+std::expected<std::unique_ptr<DownstreamConnection>, Error>
+ClientHandler::get_downstream_connection(Downstream *downstream) {
   size_t group_idx;
   auto &downstreamconf = *worker_->get_downstream_config();
   auto &routerconf = downstreamconf.router;
@@ -1022,8 +1017,6 @@ ClientHandler::get_downstream_connection(int &err, Downstream *downstream) {
   auto &groups = worker_->get_downstream_addr_groups();
 
   auto &req = downstream->request();
-
-  err = 0;
 
   switch (faddr_->alt_mode) {
   case UpstreamAltMode::API: {
@@ -1092,8 +1085,7 @@ ClientHandler::get_downstream_connection(int &err, Downstream *downstream) {
       Log{INFO, this} << "Downstream address group " << group_idx
                       << " requires frontend TLS connection.";
     }
-    err = SHRPX_ERR_TLS_REQUIRED;
-    return nullptr;
+    return std::unexpected{Error::TLS_REQUIRED};
   }
 
   auto &group = groups[group_idx];
@@ -1104,10 +1096,12 @@ ClientHandler::get_downstream_connection(int &err, Downstream *downstream) {
     return dconn;
   }
 
-  auto addr = get_downstream_addr(err, group.get(), downstream);
-  if (addr == nullptr) {
-    return nullptr;
+  auto maybe_addr = get_downstream_addr(group.get(), downstream);
+  if (!maybe_addr) {
+    return std::unexpected{maybe_addr.error()};
   }
+
+  auto addr = *maybe_addr;
 
   if (addr->proto == Proto::HTTP1) {
     auto dconn = addr->dconn_pool->pop_downstream_connection();
@@ -1121,7 +1115,7 @@ ClientHandler::get_downstream_connection(int &err, Downstream *downstream) {
         Log{INFO, this}
           << "Worker wide backend connection was blocked temporarily";
       }
-      return nullptr;
+      return std::unexpected{Error::NO_AVAIL_DOWNSTREAM};
     }
 
     if (log_enabled(INFO)) {

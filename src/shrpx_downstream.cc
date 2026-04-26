@@ -674,10 +674,10 @@ DefaultMemchunks *Downstream::get_request_buf() { return &request_buf_; }
 
 // Call this function after this object is attached to
 // Downstream. Otherwise, the program will crash.
-int Downstream::push_request_headers() {
+std::expected<void, Error> Downstream::push_request_headers() {
   if (!dconn_) {
     Log{INFO, this} << "dconn_ is NULL";
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
   return dconn_->push_request_headers();
 }

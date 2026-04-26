@@ -53,7 +53,7 @@ public:
   std::expected<void, Error> attach_downstream(Downstream *downstream) override;
   void detach_downstream(Downstream *downstream) override;
 
-  int push_request_headers() override;
+  std::expected<void, Error> push_request_headers() override;
   int push_upload_data_chunk(std::span<const uint8_t> data) override;
   int end_upload_data() override;
 

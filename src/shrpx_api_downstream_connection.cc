@@ -182,7 +182,7 @@ const APIEndpoint *lookup_api(std::string_view path) {
 }
 } // namespace
 
-int APIDownstreamConnection::push_request_headers() {
+std::expected<void, Error> APIDownstreamConnection::push_request_headers() {
   auto &req = downstream_->request();
 
   auto path = std::string_view{std::ranges::begin(req.path),
@@ -193,31 +193,31 @@ int APIDownstreamConnection::push_request_headers() {
   if (!api_) {
     send_reply(404, APIStatusCode::FAILURE);
 
-    return 0;
+    return {};
   }
 
   switch (req.method) {
   case HTTP_GET:
     if (!(api_->allowed_methods & (1 << API_METHOD_GET))) {
       error_method_not_allowed();
-      return 0;
+      return {};
     }
     break;
   case HTTP_POST:
     if (!(api_->allowed_methods & (1 << API_METHOD_POST))) {
       error_method_not_allowed();
-      return 0;
+      return {};
     }
     break;
   case HTTP_PUT:
     if (!(api_->allowed_methods & (1 << API_METHOD_PUT))) {
       error_method_not_allowed();
-      return 0;
+      return {};
     }
     break;
   default:
     error_method_not_allowed();
-    return 0;
+    return {};
   }
 
   // This works with req.fs.content_length == -1
@@ -225,7 +225,7 @@ int APIDownstreamConnection::push_request_headers() {
       static_cast<int64_t>(get_config()->api.max_request_body)) {
     send_reply(413, APIStatusCode::FAILURE);
 
-    return 0;
+    return {};
   }
 
   switch (req.method) {
@@ -240,7 +240,7 @@ int APIDownstreamConnection::push_request_headers() {
     if (fd_ == -1) {
       send_reply(500, APIStatusCode::FAILURE);
 
-      return 0;
+      return {};
     }
 #ifndef HAVE_MKOSTEMP
     util::make_socket_closeonexec(fd_);
@@ -255,7 +255,7 @@ int APIDownstreamConnection::push_request_headers() {
   auto dest = downstream_->get_request_buf();
   src->remove(*dest);
 
-  return 0;
+  return {};
 }
 
 int APIDownstreamConnection::error_method_not_allowed() {

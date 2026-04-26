@@ -230,10 +230,9 @@ nghttp2_ssize http2_data_read_callback(nghttp2_session *session,
 }
 } // namespace
 
-int Http2DownstreamConnection::push_request_headers() {
-  int rv;
+std::expected<void, Error> Http2DownstreamConnection::push_request_headers() {
   if (!downstream_) {
-    return 0;
+    return {};
   }
   if (!http2session_->can_push_request(downstream_)) {
     // The HTTP2 session to the backend has not been established or
@@ -241,7 +240,7 @@ int Http2DownstreamConnection::push_request_headers() {
     // again just after it is established.
     downstream_->set_request_pending(true);
     http2session_->start_checking_connection();
-    return 0;
+    return {};
   }
 
   downstream_->set_request_pending(false);
@@ -250,7 +249,7 @@ int Http2DownstreamConnection::push_request_headers() {
 
   if (req.connect_proto != ConnectProto::NONE &&
       !http2session_->get_allow_connect_proto()) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   auto &balloc = downstream_->get_block_allocator();
@@ -500,10 +499,11 @@ int Http2DownstreamConnection::push_request_headers() {
     data_prdptr = &data_prd;
   }
 
-  rv = http2session_->submit_request(this, nva.data(), nva.size(), data_prdptr);
-  if (rv != 0) {
+  if (auto rv = http2session_->submit_request(this, nva.data(), nva.size(),
+                                              data_prdptr);
+      !rv) {
     Log{FATAL, this} << "nghttp2_submit_request() failed";
-    return -1;
+    return rv;
   }
 
   if (data_prdptr) {
@@ -511,7 +511,7 @@ int Http2DownstreamConnection::push_request_headers() {
   }
 
   http2session_->signal_write();
-  return 0;
+  return {};
 }
 
 int Http2DownstreamConnection::push_upload_data_chunk(
