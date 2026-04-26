@@ -2036,7 +2036,7 @@ int Http3Upstream::http_acked_stream_data(Downstream *downstream,
 
   assert(datalen == drained);
 
-  if (downstream->resume_read(SHRPX_NO_BUFFER, datalen) != 0) {
+  if (!downstream->resume_read(SHRPX_NO_BUFFER, datalen)) {
     return -1;
   }
 

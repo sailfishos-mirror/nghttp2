@@ -867,8 +867,8 @@ void HttpDownstreamConnection::pause_read(IOCtrlReason reason) {
   ioctrl_.pause_read(reason);
 }
 
-int HttpDownstreamConnection::resume_read(IOCtrlReason reason,
-                                          size_t consumed) {
+std::expected<void, Error>
+HttpDownstreamConnection::resume_read(IOCtrlReason reason, size_t consumed) {
   auto &downstreamconf = *worker_->get_downstream_config();
 
   if (downstream_->get_response_buf()->rleft() <=
@@ -876,7 +876,7 @@ int HttpDownstreamConnection::resume_read(IOCtrlReason reason,
     ioctrl_.resume_read(reason);
   }
 
-  return 0;
+  return {};
 }
 
 void HttpDownstreamConnection::force_resume_read() {

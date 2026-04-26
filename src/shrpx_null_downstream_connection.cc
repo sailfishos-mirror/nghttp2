@@ -55,11 +55,6 @@ void NullDownstreamConnection::detach_downstream(Downstream *downstream) {
 
 void NullDownstreamConnection::pause_read(IOCtrlReason reason) {}
 
-int NullDownstreamConnection::resume_read(IOCtrlReason reason,
-                                          size_t consumed) {
-  return 0;
-}
-
 void NullDownstreamConnection::force_resume_read() {}
 
 void NullDownstreamConnection::on_upstream_change(Upstream *upstream) {}

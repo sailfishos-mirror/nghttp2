@@ -452,10 +452,6 @@ std::expected<void, Error> APIDownstreamConnection::handle_configrevision() {
 
 void APIDownstreamConnection::pause_read(IOCtrlReason reason) {}
 
-int APIDownstreamConnection::resume_read(IOCtrlReason reason, size_t consumed) {
-  return 0;
-}
-
 void APIDownstreamConnection::force_resume_read() {}
 
 void APIDownstreamConnection::on_upstream_change(Upstream *upstream) {}

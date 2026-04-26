@@ -336,7 +336,7 @@ public:
   void set_assoc_stream_id(int64_t stream_id);
   int64_t get_assoc_stream_id() const;
   void pause_read(IOCtrlReason reason);
-  int resume_read(IOCtrlReason reason, size_t consumed);
+  std::expected<void, Error> resume_read(IOCtrlReason reason, size_t consumed);
   void force_resume_read();
   // Set stream ID for downstream HTTP2 connection.
   void set_downstream_stream_id(int64_t stream_id);

@@ -177,7 +177,7 @@ public:
 
   SSL *get_ssl() const;
 
-  int consume(int32_t stream_id, size_t len);
+  std::expected<void, Error> consume(int32_t stream_id, size_t len);
 
   // Returns true if request can be issued on downstream connection.
   bool can_push_request(const Downstream *downstream) const;

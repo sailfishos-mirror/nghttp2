@@ -57,7 +57,8 @@ public:
   void end_upload_data_chunk();
 
   void pause_read(IOCtrlReason reason) override;
-  int resume_read(IOCtrlReason reason, size_t consumed) override;
+  std::expected<void, Error> resume_read(IOCtrlReason reason,
+                                         size_t consumed) override;
   void force_resume_read() override;
 
   std::expected<void, Error> on_read() override;

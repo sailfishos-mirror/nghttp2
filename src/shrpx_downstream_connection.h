@@ -58,7 +58,8 @@ public:
   virtual std::expected<void, Error> end_upload_data() = 0;
 
   virtual void pause_read(IOCtrlReason reason) = 0;
-  virtual int resume_read(IOCtrlReason reason, size_t consumed) = 0;
+  virtual std::expected<void, Error> resume_read(IOCtrlReason reason,
+                                                 size_t consumed) = 0;
   virtual void force_resume_read() = 0;
 
   virtual std::expected<void, Error> on_read() = 0;

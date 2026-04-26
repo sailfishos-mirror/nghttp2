@@ -304,12 +304,13 @@ void Downstream::pause_read(IOCtrlReason reason) {
   }
 }
 
-int Downstream::resume_read(IOCtrlReason reason, size_t consumed) {
+std::expected<void, Error> Downstream::resume_read(IOCtrlReason reason,
+                                                   size_t consumed) {
   if (dconn_) {
     return dconn_->resume_read(reason, consumed);
   }
 
-  return 0;
+  return {};
 }
 
 void Downstream::force_resume_read() {

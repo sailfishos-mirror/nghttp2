@@ -47,7 +47,10 @@ public:
   std::expected<void, Error> end_upload_data() override { return {}; }
 
   void pause_read(IOCtrlReason reason) override;
-  int resume_read(IOCtrlReason reason, size_t consumed) override;
+  std::expected<void, Error> resume_read(IOCtrlReason reason,
+                                         size_t consumed) override {
+    return {};
+  }
   void force_resume_read() override;
 
   std::expected<void, Error> on_read() override { return {}; }

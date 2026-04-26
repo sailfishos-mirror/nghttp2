@@ -830,7 +830,7 @@ int send_data_callback(nghttp2_session *session, nghttp2_frame *frame,
     downstream->reset_upstream_wtimer();
   }
 
-  if (length > 0 && downstream->resume_read(SHRPX_NO_BUFFER, length) != 0) {
+  if (length > 0 && !downstream->resume_read(SHRPX_NO_BUFFER, length)) {
     return NGHTTP2_ERR_CALLBACK_FAILURE;
   }
 

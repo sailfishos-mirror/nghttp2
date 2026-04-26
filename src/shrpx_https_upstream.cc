@@ -805,7 +805,11 @@ int HttpsUpstream::on_write() {
     }
   }
 
-  return downstream->resume_read(SHRPX_NO_BUFFER, resp.unconsumed_body_length);
+  if (!downstream->resume_read(SHRPX_NO_BUFFER, resp.unconsumed_body_length)) {
+    return -1;
+  }
+
+  return 0;
 }
 
 ClientHandler *HttpsUpstream::get_client_handler() const { return handler_; }

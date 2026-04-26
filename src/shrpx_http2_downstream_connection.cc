@@ -556,24 +556,22 @@ std::expected<void, Error> Http2DownstreamConnection::end_upload_data() {
   return {};
 }
 
-int Http2DownstreamConnection::resume_read(IOCtrlReason reason,
-                                           size_t consumed) {
-  int rv;
-
+std::expected<void, Error>
+Http2DownstreamConnection::resume_read(IOCtrlReason reason, size_t consumed) {
   if (http2session_->get_state() != Http2SessionState::CONNECTED) {
-    return 0;
+    return {};
   }
 
   if (!downstream_ || downstream_->get_downstream_stream_id() == -1) {
-    return 0;
+    return {};
   }
 
   if (consumed > 0) {
-    rv = http2session_->consume(
-      static_cast<int32_t>(downstream_->get_downstream_stream_id()), consumed);
-
-    if (rv != 0) {
-      return -1;
+    if (auto rv = http2session_->consume(
+          static_cast<int32_t>(downstream_->get_downstream_stream_id()),
+          consumed);
+        !rv) {
+      return rv;
     }
 
     auto &resp = downstream_->response();
@@ -583,7 +581,7 @@ int Http2DownstreamConnection::resume_read(IOCtrlReason reason,
     http2session_->signal_write();
   }
 
-  return 0;
+  return {};
 }
 
 void Http2DownstreamConnection::attach_stream_data(StreamData *sd) {

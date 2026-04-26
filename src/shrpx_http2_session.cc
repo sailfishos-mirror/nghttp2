@@ -1391,7 +1391,7 @@ int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
   if (!sd || !sd->dconn) {
     http2session->submit_rst_stream(stream_id, NGHTTP2_INTERNAL_ERROR);
 
-    if (http2session->consume(stream_id, len) != 0) {
+    if (!http2session->consume(stream_id, len)) {
       return NGHTTP2_ERR_CALLBACK_FAILURE;
     }
 
@@ -1401,7 +1401,7 @@ int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
   if (!downstream->expect_response_body()) {
     http2session->submit_rst_stream(stream_id, NGHTTP2_INTERNAL_ERROR);
 
-    if (http2session->consume(stream_id, len) != 0) {
+    if (!http2session->consume(stream_id, len)) {
       return NGHTTP2_ERR_CALLBACK_FAILURE;
     }
 
@@ -1413,7 +1413,7 @@ int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
   if (downstream->get_non_final_response()) {
     http2session->submit_rst_stream(stream_id, NGHTTP2_PROTOCOL_ERROR);
 
-    if (http2session->consume(stream_id, len) != 0) {
+    if (!http2session->consume(stream_id, len)) {
       return NGHTTP2_ERR_CALLBACK_FAILURE;
     }
 
@@ -1432,7 +1432,7 @@ int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
       !rv) {
     http2session->submit_rst_stream(stream_id, NGHTTP2_INTERNAL_ERROR);
 
-    if (http2session->consume(stream_id, len) != 0) {
+    if (!http2session->consume(stream_id, len)) {
       return NGHTTP2_ERR_CALLBACK_FAILURE;
     }
 
@@ -1826,11 +1826,12 @@ int Http2Session::terminate_session(uint32_t error_code) {
 
 SSL *Http2Session::get_ssl() const { return conn_.tls.ssl; }
 
-int Http2Session::consume(int32_t stream_id, size_t len) {
+std::expected<void, Error> Http2Session::consume(int32_t stream_id,
+                                                 size_t len) {
   int rv;
 
   if (!session_) {
-    return 0;
+    return {};
   }
 
   rv = nghttp2_session_consume(session_, stream_id, len);
@@ -1839,10 +1840,10 @@ int Http2Session::consume(int32_t stream_id, size_t len) {
     Log{WARN, this} << "nghttp2_session_consume() returned error: "
                     << nghttp2_strerror(rv);
 
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
-  return 0;
+  return {};
 }
 
 bool Http2Session::can_push_request(const Downstream *downstream) const {

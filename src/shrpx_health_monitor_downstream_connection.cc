@@ -83,11 +83,6 @@ HealthMonitorDownstreamConnection::end_upload_data() {
 
 void HealthMonitorDownstreamConnection::pause_read(IOCtrlReason reason) {}
 
-int HealthMonitorDownstreamConnection::resume_read(IOCtrlReason reason,
-                                                   size_t consumed) {
-  return 0;
-}
-
 void HealthMonitorDownstreamConnection::force_resume_read() {}
 
 void HealthMonitorDownstreamConnection::on_upstream_change(Upstream *upstream) {
