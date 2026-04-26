@@ -135,21 +135,21 @@ public:
 
   int connection_made();
 
-  int do_read();
-  int do_write();
+  std::expected<void, Error> do_read();
+  std::expected<void, Error> do_write();
 
   int on_read(std::span<const uint8_t> data);
   int on_write();
 
-  int connected();
-  int read_clear();
-  int write_clear();
-  int tls_handshake();
-  int read_tls();
-  int write_tls();
+  std::expected<void, Error> connected();
+  std::expected<void, Error> read_clear();
+  std::expected<void, Error> write_clear();
+  std::expected<void, Error> tls_handshake();
+  std::expected<void, Error> read_tls();
+  std::expected<void, Error> write_tls();
   // This is a special write function which just stop write event
   // watcher.
-  int write_void();
+  std::expected<void, Error> write_void();
 
   int downstream_read_proxy(std::span<const uint8_t> data);
   int downstream_connect_proxy();
@@ -157,7 +157,7 @@ public:
   int downstream_read(std::span<const uint8_t> data);
   int downstream_write();
 
-  int noop();
+  std::expected<void, Error> noop() { return {}; }
   int read_noop(std::span<const uint8_t> data);
   int write_noop();
 
@@ -268,7 +268,7 @@ private:
   ev_prepare prep_;
   DList<Http2DownstreamConnection> dconns_;
   DList<StreamData> streams_;
-  std::function<int(Http2Session &)> read_, write_;
+  std::function<std::expected<void, Error>(Http2Session &)> read_, write_;
   std::function<int(Http2Session &, std::span<const uint8_t>)> on_read_;
   std::function<int(Http2Session &)> on_write_;
   // Used to parse the response from HTTP proxy

@@ -750,10 +750,10 @@ bool Downstream::get_chunked_response() const { return chunked_response_; }
 
 void Downstream::set_chunked_response(bool f) { chunked_response_ = f; }
 
-int Downstream::on_read() {
+std::expected<void, Error> Downstream::on_read() {
   if (!dconn_) {
     Log{INFO, this} << "dconn_ is NULL";
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
   return dconn_->on_read();
 }

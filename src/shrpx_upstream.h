@@ -26,8 +26,12 @@
 #define SHRPX_UPSTREAM_H
 
 #include "shrpx.h"
+
+#include <expected>
+
 #include "shrpx_io_control.h"
 #include "memchunk.h"
+#include "errors.h"
 
 using namespace nghttp2;
 
@@ -49,15 +53,20 @@ public:
   // to backend, and it should be redirected to https URI.
   virtual int
   on_downstream_abort_request_with_https_redirect(Downstream *downstream) = 0;
-  virtual int downstream_read(DownstreamConnection *dconn) = 0;
-  virtual int downstream_write(DownstreamConnection *dconn) = 0;
-  virtual int downstream_eof(DownstreamConnection *dconn) = 0;
-  virtual int downstream_error(DownstreamConnection *dconn, int events) = 0;
+  virtual std::expected<void, Error>
+  downstream_read(DownstreamConnection *dconn) = 0;
+  virtual std::expected<void, Error>
+  downstream_write(DownstreamConnection *dconn) = 0;
+  virtual std::expected<void, Error>
+  downstream_eof(DownstreamConnection *dconn) = 0;
+  virtual std::expected<void, Error>
+  downstream_error(DownstreamConnection *dconn, int events) = 0;
   virtual ClientHandler *get_client_handler() const = 0;
 
   virtual int on_downstream_header_complete(Downstream *downstream) = 0;
-  virtual int on_downstream_body(Downstream *downstream,
-                                 std::span<const uint8_t> data, bool flush) = 0;
+  virtual std::expected<void, Error>
+  on_downstream_body(Downstream *downstream, std::span<const uint8_t> data,
+                     bool flush) = 0;
   virtual int on_downstream_body_complete(Downstream *downstream) = 0;
 
   virtual void on_handler_delete() = 0;

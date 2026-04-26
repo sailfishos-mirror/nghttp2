@@ -839,30 +839,29 @@ int HttpsUpstream::resume_read(IOCtrlReason reason, Downstream *downstream,
   return 0;
 }
 
-int HttpsUpstream::downstream_read(DownstreamConnection *dconn) {
+std::expected<void, Error>
+HttpsUpstream::downstream_read(DownstreamConnection *dconn) {
   auto downstream = dconn->get_downstream();
-  int rv;
 
-  rv = downstream->on_read();
-
-  if (rv == SHRPX_ERR_EOF) {
-    if (downstream->get_request_header_sent()) {
-      return downstream_eof(dconn);
+  auto rv = downstream->on_read();
+  if (!rv) {
+    if (rv.error() == Error::RECV_EOF) {
+      if (downstream->get_request_header_sent()) {
+        return downstream_eof(dconn);
+      }
+      return std::unexpected{Error::DCONN_RETRY};
     }
-    return SHRPX_ERR_RETRY;
-  }
 
-  if (rv == SHRPX_ERR_DCONN_CANCELED) {
-    downstream->pop_downstream_connection();
-    goto end;
-  }
+    if (rv.error() == Error::DCONN_CANCELED) {
+      downstream->pop_downstream_connection();
+      goto end;
+    }
 
-  if (rv < 0) {
     return downstream_error(dconn, Downstream::EVENT_ERROR);
   }
 
   if (downstream->get_response_state() == DownstreamState::MSG_RESET) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   if (downstream->get_response_state() == DownstreamState::MSG_BAD_HEADER) {
@@ -879,24 +878,25 @@ int HttpsUpstream::downstream_read(DownstreamConnection *dconn) {
 end:
   handler_->signal_write();
 
-  return 0;
+  return {};
 }
 
-int HttpsUpstream::downstream_write(DownstreamConnection *dconn) {
-  int rv;
-  rv = dconn->on_write();
-  if (rv == SHRPX_ERR_NETWORK) {
-    return downstream_error(dconn, Downstream::EVENT_ERROR);
-  }
+std::expected<void, Error>
+HttpsUpstream::downstream_write(DownstreamConnection *dconn) {
+  auto rv = dconn->on_write();
+  if (!rv) {
+    if (rv.error() == Error::NETWORK) {
+      return downstream_error(dconn, Downstream::EVENT_ERROR);
+    }
 
-  if (rv != 0) {
     return rv;
   }
 
-  return 0;
+  return {};
 }
 
-int HttpsUpstream::downstream_eof(DownstreamConnection *dconn) {
+std::expected<void, Error>
+HttpsUpstream::downstream_eof(DownstreamConnection *dconn) {
   auto downstream = dconn->get_downstream();
 
   if (log_enabled(INFO)) {
@@ -932,14 +932,15 @@ int HttpsUpstream::downstream_eof(DownstreamConnection *dconn) {
 
   // Otherwise, we don't know how to recover from this situation. Just
   // drop connection.
-  return -1;
+  return std::unexpected{Error::INTERNAL};
 end:
   handler_->signal_write();
 
-  return 0;
+  return {};
 }
 
-int HttpsUpstream::downstream_error(DownstreamConnection *dconn, int events) {
+std::expected<void, Error>
+HttpsUpstream::downstream_error(DownstreamConnection *dconn, int events) {
   auto downstream = dconn->get_downstream();
   if (log_enabled(INFO)) {
     if (events & Downstream::EVENT_ERROR) {
@@ -949,7 +950,7 @@ int HttpsUpstream::downstream_error(DownstreamConnection *dconn, int events) {
     }
   }
   if (downstream->get_response_state() != DownstreamState::INITIAL) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   unsigned int status;
@@ -967,7 +968,7 @@ int HttpsUpstream::downstream_error(DownstreamConnection *dconn, int events) {
   downstream->pop_downstream_connection();
 
   handler_->signal_write();
-  return 0;
+  return {};
 }
 
 int HttpsUpstream::send_reply(Downstream *downstream,
@@ -1341,11 +1342,11 @@ int HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
   return 0;
 }
 
-int HttpsUpstream::on_downstream_body(Downstream *downstream,
-                                      std::span<const uint8_t> data,
-                                      bool flush) {
+std::expected<void, Error>
+HttpsUpstream::on_downstream_body(Downstream *downstream,
+                                  std::span<const uint8_t> data, bool flush) {
   if (data.empty()) {
-    return 0;
+    return {};
   }
   auto output = downstream->get_response_buf();
   if (downstream->get_chunked_response()) {
@@ -1360,7 +1361,7 @@ int HttpsUpstream::on_downstream_body(Downstream *downstream,
   if (downstream->get_chunked_response()) {
     output->append("\r\n"sv);
   }
-  return 0;
+  return {};
 }
 
 int HttpsUpstream::on_downstream_body_complete(Downstream *downstream) {

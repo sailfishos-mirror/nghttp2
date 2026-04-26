@@ -61,8 +61,8 @@ public:
   int resume_read(IOCtrlReason reason, size_t consumed) override;
   void force_resume_read() override {}
 
-  int on_read() override;
-  int on_write() override;
+  std::expected<void, Error> on_read() override { return {}; }
+  std::expected<void, Error> on_write() override { return {}; }
   int on_timeout() override;
 
   void on_upstream_change(Upstream *upstream) override {}

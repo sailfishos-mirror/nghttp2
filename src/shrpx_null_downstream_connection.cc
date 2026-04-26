@@ -70,10 +70,6 @@ int NullDownstreamConnection::resume_read(IOCtrlReason reason,
 
 void NullDownstreamConnection::force_resume_read() {}
 
-int NullDownstreamConnection::on_read() { return 0; }
-
-int NullDownstreamConnection::on_write() { return 0; }
-
 void NullDownstreamConnection::on_upstream_change(Upstream *upstream) {}
 
 bool NullDownstreamConnection::poolable() const { return false; }

@@ -60,7 +60,7 @@ void readcb(struct ev_loop *loop, ev_io *w, int revents) {
   auto conn = static_cast<Connection *>(w->data);
   auto mconn = static_cast<MemcachedConnection *>(conn->data);
 
-  if (mconn->on_read() != 0) {
+  if (!mconn->on_read()) {
     mconn->reconnect_or_fail();
     return;
   }
@@ -72,7 +72,7 @@ void writecb(struct ev_loop *loop, ev_io *w, int revents) {
   auto conn = static_cast<Connection *>(w->data);
   auto mconn = static_cast<MemcachedConnection *>(conn->data);
 
-  if (mconn->on_write() != 0) {
+  if (!mconn->on_write()) {
     mconn->reconnect_or_fail();
     return;
   }
@@ -253,20 +253,23 @@ int MemcachedConnection::connected() {
   return 0;
 }
 
-int MemcachedConnection::on_write() { return do_write_(*this); }
-int MemcachedConnection::on_read() { return do_read_(*this); }
+std::expected<void, Error> MemcachedConnection::on_write() {
+  return do_write_(*this);
+}
+std::expected<void, Error> MemcachedConnection::on_read() {
+  return do_read_(*this);
+}
 
-int MemcachedConnection::tls_handshake() {
+std::expected<void, Error> MemcachedConnection::tls_handshake() {
   ERR_clear_error();
 
   conn_.last_read = std::chrono::steady_clock::now();
 
-  auto rv = conn_.tls_handshake();
-  if (rv == SHRPX_ERR_INPROGRESS) {
-    return 0;
-  }
+  if (auto rv = conn_.tls_handshake(); !rv) {
+    if (rv.error() == Error::TLS_HANDSHAKE_INPROGRESS) {
+      return {};
+    }
 
-  if (rv < 0) {
     connect_blocker_.on_failure();
     return rv;
   }
@@ -280,7 +283,7 @@ int MemcachedConnection::tls_handshake() {
   if (!tlsconf.insecure &&
       tls::check_cert(conn_.tls.ssl, addr_, sni_name_) != 0) {
     connect_blocker_.on_failure();
-    return -1;
+    return std::unexpected{Error::TLS_VERIFY_PEER};
   }
 
   ev_timer_stop(conn_.loop, &conn_.rt);
@@ -296,9 +299,9 @@ int MemcachedConnection::tls_handshake() {
   return on_write();
 }
 
-int MemcachedConnection::write_tls() {
+std::expected<void, Error> MemcachedConnection::write_tls() {
   if (!connected_) {
-    return 0;
+    return {};
   }
 
   conn_.last_read = std::chrono::steady_clock::now();
@@ -320,12 +323,14 @@ int MemcachedConnection::write_tls() {
       }
     }
 
-    auto nwrite = conn_.write_tls({std::ranges::begin(buf), p});
-    if (nwrite < 0) {
-      return -1;
+    auto maybe_nwrite = conn_.write_tls({std::ranges::begin(buf), p});
+    if (!maybe_nwrite) {
+      return std::unexpected{maybe_nwrite.error()};
     }
+
+    auto nwrite = *maybe_nwrite;
     if (nwrite == 0) {
-      return 0;
+      return {};
     }
 
     drain_send_queue(as_unsigned(nwrite));
@@ -334,40 +339,40 @@ int MemcachedConnection::write_tls() {
   conn_.wlimit.stopw();
   ev_timer_stop(conn_.loop, &conn_.wt);
 
-  return 0;
+  return {};
 }
 
-int MemcachedConnection::read_tls() {
+std::expected<void, Error> MemcachedConnection::read_tls() {
   if (!connected_) {
-    return 0;
+    return {};
   }
 
   conn_.last_read = std::chrono::steady_clock::now();
 
   for (;;) {
-    auto nread = conn_.read_tls(recvbuf_.wbuffer());
-
-    if (nread == 0) {
-      return 0;
+    auto maybe_data = conn_.read_tls(recvbuf_.wbuffer());
+    if (!maybe_data) {
+      return std::unexpected{maybe_data.error()};
     }
 
-    if (nread < 0) {
-      return -1;
+    auto data = *maybe_data;
+    if (data.empty()) {
+      return {};
     }
 
-    recvbuf_.write(as_unsigned(nread));
+    recvbuf_.write(data.size());
 
     if (parse_packet() != 0) {
-      return -1;
+      return std::unexpected{Error::INTERNAL};
     }
   }
 
-  return 0;
+  return {};
 }
 
-int MemcachedConnection::write_clear() {
+std::expected<void, Error> MemcachedConnection::write_clear() {
   if (!connected_) {
-    return 0;
+    return {};
   }
 
   conn_.last_read = std::chrono::steady_clock::now();
@@ -376,12 +381,14 @@ int MemcachedConnection::write_clear() {
 
   for (; !sendq_.empty();) {
     auto iov = fill_request_buffer(iovbuf);
-    auto nwrite = conn_.writev_clear(iov);
-    if (nwrite < 0) {
-      return -1;
+    auto maybe_nwrite = conn_.writev_clear(iov);
+    if (!maybe_nwrite) {
+      return std::unexpected{maybe_nwrite.error()};
     }
+
+    auto nwrite = *maybe_nwrite;
     if (nwrite == 0) {
-      return 0;
+      return {};
     }
 
     drain_send_queue(as_unsigned(nwrite));
@@ -390,35 +397,35 @@ int MemcachedConnection::write_clear() {
   conn_.wlimit.stopw();
   ev_timer_stop(conn_.loop, &conn_.wt);
 
-  return 0;
+  return {};
 }
 
-int MemcachedConnection::read_clear() {
+std::expected<void, Error> MemcachedConnection::read_clear() {
   if (!connected_) {
-    return 0;
+    return {};
   }
 
   conn_.last_read = std::chrono::steady_clock::now();
 
   for (;;) {
-    auto nread = conn_.read_clear(recvbuf_.wbuffer());
-
-    if (nread == 0) {
-      return 0;
+    auto maybe_data = conn_.read_clear(recvbuf_.wbuffer());
+    if (!maybe_data) {
+      return std::unexpected{maybe_data.error()};
     }
 
-    if (nread < 0) {
-      return -1;
+    auto data = *maybe_data;
+    if (data.empty()) {
+      return {};
     }
 
-    recvbuf_.write(as_unsigned(nread));
+    recvbuf_.write(data.size());
 
     if (parse_packet() != 0) {
-      return -1;
+      return std::unexpected{Error::INTERNAL};
     }
   }
 
-  return 0;
+  return {};
 }
 
 int MemcachedConnection::parse_packet() {
@@ -729,8 +736,6 @@ int MemcachedConnection::add_request(std::unique_ptr<MemcachedRequest> req) {
 
 // TODO should we start write timer too?
 void MemcachedConnection::signal_write() { conn_.wlimit.startw(); }
-
-int MemcachedConnection::noop() { return 0; }
 
 void MemcachedConnection::reconnect_or_fail() {
   if (!connected_ || (recvq_.empty() && sendq_.empty())) {

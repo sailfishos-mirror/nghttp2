@@ -457,10 +457,6 @@ int APIDownstreamConnection::resume_read(IOCtrlReason reason, size_t consumed) {
 
 void APIDownstreamConnection::force_resume_read() {}
 
-int APIDownstreamConnection::on_read() { return 0; }
-
-int APIDownstreamConnection::on_write() { return 0; }
-
 void APIDownstreamConnection::on_upstream_change(Upstream *upstream) {}
 
 bool APIDownstreamConnection::poolable() const { return false; }

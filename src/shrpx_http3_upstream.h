@@ -57,15 +57,20 @@ public:
                                   unsigned int status_code) override;
   int on_downstream_abort_request_with_https_redirect(
     Downstream *downstream) override;
-  int downstream_read(DownstreamConnection *dconn) override;
-  int downstream_write(DownstreamConnection *dconn) override;
-  int downstream_eof(DownstreamConnection *dconn) override;
-  int downstream_error(DownstreamConnection *dconn, int events) override;
+  std::expected<void, Error>
+  downstream_read(DownstreamConnection *dconn) override;
+  std::expected<void, Error>
+  downstream_write(DownstreamConnection *dconn) override;
+  std::expected<void, Error>
+  downstream_eof(DownstreamConnection *dconn) override;
+  std::expected<void, Error> downstream_error(DownstreamConnection *dconn,
+                                              int events) override;
   ClientHandler *get_client_handler() const override;
 
   int on_downstream_header_complete(Downstream *downstream) override;
-  int on_downstream_body(Downstream *downstream, std::span<const uint8_t> data,
-                         bool flush) override;
+  std::expected<void, Error> on_downstream_body(Downstream *downstream,
+                                                std::span<const uint8_t> data,
+                                                bool flush) override;
   int on_downstream_body_complete(Downstream *downstream) override;
 
   void on_handler_delete() override;

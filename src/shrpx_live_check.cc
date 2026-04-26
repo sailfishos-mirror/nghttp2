@@ -34,12 +34,10 @@ constexpr size_t MAX_BUFFER_SIZE = 4_k;
 
 namespace {
 void readcb(struct ev_loop *loop, ev_io *w, int revents) {
-  int rv;
   auto conn = static_cast<Connection *>(w->data);
   auto live_check = static_cast<LiveCheck *>(conn->data);
 
-  rv = live_check->do_read();
-  if (rv != 0) {
+  if (!live_check->do_read()) {
     live_check->on_failure();
     return;
   }
@@ -48,12 +46,10 @@ void readcb(struct ev_loop *loop, ev_io *w, int revents) {
 
 namespace {
 void writecb(struct ev_loop *loop, ev_io *w, int revents) {
-  int rv;
   auto conn = static_cast<Connection *>(w->data);
   auto live_check = static_cast<LiveCheck *>(conn->data);
 
-  rv = live_check->do_write();
-  if (rv != 0) {
+  if (!live_check->do_write()) {
     live_check->on_failure();
     return;
   }
@@ -183,9 +179,9 @@ void LiveCheck::schedule() {
   ev_timer_start(conn_.loop, &backoff_timer_);
 }
 
-int LiveCheck::do_read() { return read_(*this); }
+std::expected<void, Error> LiveCheck::do_read() { return read_(*this); }
 
-int LiveCheck::do_write() { return write_(*this); }
+std::expected<void, Error> LiveCheck::do_write() { return write_(*this); }
 
 int LiveCheck::initiate_connection() {
   int rv;
@@ -323,7 +319,7 @@ int LiveCheck::initiate_connection() {
   return 0;
 }
 
-int LiveCheck::connected() {
+std::expected<void, Error> LiveCheck::connected() {
   auto sock_error = util::get_socket_error(conn_.fd);
   if (sock_error != 0) {
     if (log_enabled(INFO)) {
@@ -331,7 +327,7 @@ int LiveCheck::connected() {
                 << util::to_numeric_addr(raddr_) << ": errno=" << sock_error;
     }
 
-    return -1;
+    return std::unexpected{Error::CONNECT_FAIL};
   }
 
   if (log_enabled(INFO)) {
@@ -361,29 +357,27 @@ int LiveCheck::connected() {
     write_ = &LiveCheck::write_clear;
 
     if (connection_made() != 0) {
-      return -1;
+      return std::unexpected{Error::INTERNAL};
     }
 
-    return 0;
+    return {};
   }
 
   on_success();
 
-  return 0;
+  return {};
 }
 
-int LiveCheck::tls_handshake() {
+std::expected<void, Error> LiveCheck::tls_handshake() {
   conn_.last_read = std::chrono::steady_clock::now();
 
   ERR_clear_error();
 
-  auto rv = conn_.tls_handshake();
+  if (auto rv = conn_.tls_handshake(); !rv) {
+    if (rv.error() == Error::TLS_HANDSHAKE_INPROGRESS) {
+      return {};
+    }
 
-  if (rv == SHRPX_ERR_INPROGRESS) {
-    return 0;
-  }
-
-  if (rv < 0) {
     return rv;
   }
 
@@ -393,7 +387,7 @@ int LiveCheck::tls_handshake() {
 
   if (!get_config()->tls.insecure &&
       tls::check_cert(conn_.tls.ssl, addr_, raddr_) != 0) {
-    return -1;
+    return std::unexpected{Error::TLS_VERIFY_PEER};
   }
 
   // Check negotiated ALPN
@@ -410,7 +404,7 @@ int LiveCheck::tls_handshake() {
     if (proto.empty() || proto == "http/1.1"sv) {
       break;
     }
-    return -1;
+    return std::unexpected{Error::ALPN};
   case Proto::HTTP2:
     if (util::check_h2_is_selected(proto)) {
       // For HTTP/2, we try to read SETTINGS ACK from server to make
@@ -419,22 +413,22 @@ int LiveCheck::tls_handshake() {
       write_ = &LiveCheck::write_tls;
 
       if (connection_made() != 0) {
-        return -1;
+        return std::unexpected{Error::INTERNAL};
       }
 
-      return 0;
+      return {};
     }
-    return -1;
+    return std::unexpected{Error::ALPN};
   default:
     break;
   }
 
   on_success();
 
-  return 0;
+  return {};
 }
 
-int LiveCheck::read_tls() {
+std::expected<void, Error> LiveCheck::read_tls() {
   conn_.last_read = std::chrono::steady_clock::now();
 
   std::array<uint8_t, 4_k> rawbuf;
@@ -443,23 +437,23 @@ int LiveCheck::read_tls() {
   ERR_clear_error();
 
   for (;;) {
-    auto nread = conn_.read_tls(buf);
-
-    if (nread == 0) {
-      return 0;
+    auto maybe_data = conn_.read_tls(buf);
+    if (!maybe_data) {
+      return std::unexpected{maybe_data.error()};
     }
 
-    if (nread < 0) {
-      return static_cast<int>(nread);
+    auto data = *maybe_data;
+    if (data.empty()) {
+      return {};
     }
 
-    if (on_read(buf.first(as_unsigned(nread))) != 0) {
-      return -1;
+    if (on_read(data) != 0) {
+      return std::unexpected{Error::INTERNAL};
     }
   }
 }
 
-int LiveCheck::write_tls() {
+std::expected<void, Error> LiveCheck::write_tls() {
   conn_.last_read = std::chrono::steady_clock::now();
 
   ERR_clear_error();
@@ -468,7 +462,7 @@ int LiveCheck::write_tls() {
     auto data = wb_.peek();
     if (data.empty()) {
       if (on_write() != 0) {
-        return -1;
+        return std::unexpected{Error::INTERNAL};
       }
 
       data = wb_.peek();
@@ -478,17 +472,17 @@ int LiveCheck::write_tls() {
       }
     }
 
-    auto nwrite = conn_.write_tls(data);
+    auto maybe_nwrite = conn_.write_tls(data);
+    if (!maybe_nwrite) {
+      return std::unexpected{maybe_nwrite.error()};
+    }
 
+    auto nwrite = *maybe_nwrite;
     if (nwrite == 0) {
-      return 0;
+      return {};
     }
 
-    if (nwrite < 0) {
-      return static_cast<int>(nwrite);
-    }
-
-    wb_.drain(as_unsigned(nwrite));
+    wb_.drain(nwrite);
   }
 
   conn_.wlimit.stopw();
@@ -498,40 +492,40 @@ int LiveCheck::write_tls() {
     on_success();
   }
 
-  return 0;
+  return {};
 }
 
-int LiveCheck::read_clear() {
+std::expected<void, Error> LiveCheck::read_clear() {
   conn_.last_read = std::chrono::steady_clock::now();
 
   std::array<uint8_t, 4_k> rawbuf;
   auto buf = std::span{rawbuf};
 
   for (;;) {
-    auto nread = conn_.read_clear(buf);
-
-    if (nread == 0) {
-      return 0;
+    auto maybe_data = conn_.read_clear(buf);
+    if (!maybe_data) {
+      return std::unexpected{maybe_data.error()};
     }
 
-    if (nread < 0) {
-      return static_cast<int>(nread);
+    auto data = *maybe_data;
+    if (data.empty()) {
+      return {};
     }
 
-    if (on_read(buf.first(as_unsigned(nread))) != 0) {
-      return -1;
+    if (on_read(data) != 0) {
+      return std::unexpected{Error::INTERNAL};
     }
   }
 }
 
-int LiveCheck::write_clear() {
+std::expected<void, Error> LiveCheck::write_clear() {
   conn_.last_read = std::chrono::steady_clock::now();
 
   for (;;) {
     auto data = wb_.peek();
     if (data.empty()) {
       if (on_write() != 0) {
-        return -1;
+        return std::unexpected{Error::INTERNAL};
       }
 
       data = wb_.peek();
@@ -540,17 +534,17 @@ int LiveCheck::write_clear() {
       }
     }
 
-    auto nwrite = conn_.write_clear(data);
+    auto maybe_nwrite = conn_.write_clear(data);
+    if (!maybe_nwrite) {
+      return std::unexpected{maybe_nwrite.error()};
+    }
 
+    auto nwrite = *maybe_nwrite;
     if (nwrite == 0) {
-      return 0;
+      return {};
     }
 
-    if (nwrite < 0) {
-      return static_cast<int>(nwrite);
-    }
-
-    wb_.drain(as_unsigned(nwrite));
+    wb_.drain(nwrite);
   }
 
   conn_.wlimit.stopw();
@@ -560,7 +554,7 @@ int LiveCheck::write_clear() {
     on_success();
   }
 
-  return 0;
+  return {};
 }
 
 int LiveCheck::on_read(std::span<const uint8_t> data) {
@@ -673,8 +667,6 @@ void LiveCheck::on_success() {
 
   disconnect();
 }
-
-int LiveCheck::noop() { return 0; }
 
 void LiveCheck::start_settings_timer() {
   auto &downstreamconf = get_config()->http2.downstream;

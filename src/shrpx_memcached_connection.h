@@ -108,15 +108,15 @@ public:
   int initiate_connection();
 
   int connected();
-  int on_write();
-  int on_read();
+  std::expected<void, Error> on_write();
+  std::expected<void, Error> on_read();
 
-  int write_clear();
-  int read_clear();
+  std::expected<void, Error> write_clear();
+  std::expected<void, Error> read_clear();
 
-  int tls_handshake();
-  int write_tls();
-  int read_tls();
+  std::expected<void, Error> tls_handshake();
+  std::expected<void, Error> write_tls();
+  std::expected<void, Error> read_tls();
 
   std::span<struct iovec> fill_request_buffer(std::span<struct iovec> iov);
   void drain_send_queue(size_t nwrite);
@@ -127,7 +127,7 @@ public:
 
   void signal_write();
 
-  int noop();
+  std::expected<void, Error> noop() { return {}; }
 
   void reconnect_or_fail();
 
@@ -136,7 +136,8 @@ private:
   std::deque<std::unique_ptr<MemcachedRequest>> recvq_;
   std::deque<std::unique_ptr<MemcachedRequest>> sendq_;
   std::deque<MemcachedSendbuf> sendbufv_;
-  std::function<int(MemcachedConnection &)> do_read_, do_write_;
+  std::function<std::expected<void, Error>(MemcachedConnection &)> do_read_,
+    do_write_;
   std::string_view sni_name_;
   tls::TLSSessionCache tls_session_cache_;
   ConnectBlocker connect_blocker_;

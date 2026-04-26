@@ -1160,9 +1160,10 @@ int Http2Upstream::on_write() {
        http2conf.upstream.optimize_window_size) &&
       handler_->get_ssl()) {
     auto conn = handler_->get_connection();
-    TCPHint hint;
-    rv = conn->get_tcp_hint(&hint);
-    if (rv == 0) {
+    auto maybe_hint = conn->get_tcp_hint();
+    if (maybe_hint) {
+      const auto &hint = *maybe_hint;
+
       if (http2conf.upstream.optimize_write_buffer_size) {
         max_buffer_size_ = std::min(MAX_BUFFER_SIZE, hint.write_buffer_size);
       }
@@ -1219,7 +1220,8 @@ int Http2Upstream::on_write() {
 
 ClientHandler *Http2Upstream::get_client_handler() const { return handler_; }
 
-int Http2Upstream::downstream_read(DownstreamConnection *dconn) {
+std::expected<void, Error>
+Http2Upstream::downstream_read(DownstreamConnection *dconn) {
   auto downstream = dconn->get_downstream();
 
   if (downstream->get_response_state() == DownstreamState::MSG_RESET) {
@@ -1235,26 +1237,26 @@ int Http2Upstream::downstream_read(DownstreamConnection *dconn) {
   } else if (downstream->get_response_state() ==
              DownstreamState::MSG_BAD_HEADER) {
     if (error_reply(downstream, 502) != 0) {
-      return -1;
+      return std::unexpected{Error::INTERNAL};
     }
     downstream->pop_downstream_connection();
     // dconn was deleted
     dconn = nullptr;
   } else {
     auto rv = downstream->on_read();
-    if (rv == SHRPX_ERR_EOF) {
-      if (downstream->get_request_header_sent()) {
-        return downstream_eof(dconn);
+    if (!rv) {
+      if (rv.error() == Error::RECV_EOF) {
+        if (downstream->get_request_header_sent()) {
+          return downstream_eof(dconn);
+        }
+        return std::unexpected{Error::DCONN_RETRY};
       }
-      return SHRPX_ERR_RETRY;
-    }
-    if (rv == SHRPX_ERR_DCONN_CANCELED) {
-      downstream->pop_downstream_connection();
-      handler_->signal_write();
-      return 0;
-    }
-    if (rv != 0) {
-      if (rv != SHRPX_ERR_NETWORK) {
+      if (rv.error() == Error::DCONN_CANCELED) {
+        downstream->pop_downstream_connection();
+        handler_->signal_write();
+        return {};
+      }
+      if (rv.error() != Error::NETWORK) {
         if (log_enabled(INFO)) {
           Log{INFO, dconn} << "HTTP parser failure";
         }
@@ -1272,22 +1274,25 @@ int Http2Upstream::downstream_read(DownstreamConnection *dconn) {
 
   // At this point, downstream may be deleted.
 
-  return 0;
+  return {};
 }
 
-int Http2Upstream::downstream_write(DownstreamConnection *dconn) {
-  int rv;
-  rv = dconn->on_write();
-  if (rv == SHRPX_ERR_NETWORK) {
-    return downstream_error(dconn, Downstream::EVENT_ERROR);
-  }
-  if (rv != 0) {
+std::expected<void, Error>
+Http2Upstream::downstream_write(DownstreamConnection *dconn) {
+  auto rv = dconn->on_write();
+  if (!rv) {
+    if (rv.error() == Error::NETWORK) {
+      return downstream_error(dconn, Downstream::EVENT_ERROR);
+    }
+
     return rv;
   }
-  return 0;
+
+  return {};
 }
 
-int Http2Upstream::downstream_eof(DownstreamConnection *dconn) {
+std::expected<void, Error>
+Http2Upstream::downstream_eof(DownstreamConnection *dconn) {
   auto downstream = dconn->get_downstream();
 
   if (log_enabled(INFO)) {
@@ -1317,15 +1322,16 @@ int Http2Upstream::downstream_eof(DownstreamConnection *dconn) {
     // If stream was not closed, then we set MSG_COMPLETE and let
     // on_stream_close_callback delete downstream.
     if (error_reply(downstream, 502) != 0) {
-      return -1;
+      return std::unexpected{Error::INTERNAL};
     }
   }
   handler_->signal_write();
   // At this point, downstream may be deleted.
-  return 0;
+  return {};
 }
 
-int Http2Upstream::downstream_error(DownstreamConnection *dconn, int events) {
+std::expected<void, Error>
+Http2Upstream::downstream_error(DownstreamConnection *dconn, int events) {
   auto downstream = dconn->get_downstream();
 
   if (log_enabled(INFO)) {
@@ -1371,14 +1377,14 @@ int Http2Upstream::downstream_error(DownstreamConnection *dconn, int events) {
         status = 502;
       }
       if (error_reply(downstream, status) != 0) {
-        return -1;
+        return std::unexpected{Error::INTERNAL};
       }
     }
     downstream->set_response_state(DownstreamState::MSG_COMPLETE);
   }
   handler_->signal_write();
   // At this point, downstream may be deleted.
-  return 0;
+  return {};
 }
 
 int Http2Upstream::rst_stream(Downstream *downstream, uint32_t error_code) {
@@ -1898,9 +1904,9 @@ int Http2Upstream::on_downstream_header_complete(Downstream *downstream) {
 
 // WARNING: Never call directly or indirectly nghttp2_session_send or
 // nghttp2_session_recv. These calls may delete downstream.
-int Http2Upstream::on_downstream_body(Downstream *downstream,
-                                      std::span<const uint8_t> data,
-                                      bool flush) {
+std::expected<void, Error>
+Http2Upstream::on_downstream_body(Downstream *downstream,
+                                  std::span<const uint8_t> data, bool flush) {
   auto body = downstream->get_response_buf();
   body->append(data);
 
@@ -1911,7 +1917,7 @@ int Http2Upstream::on_downstream_body(Downstream *downstream,
     downstream->ensure_upstream_wtimer();
   }
 
-  return 0;
+  return {};
 }
 
 // WARNING: Never call directly or indirectly nghttp2_session_send or

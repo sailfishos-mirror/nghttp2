@@ -59,8 +59,8 @@ public:
   int resume_read(IOCtrlReason reason, size_t consumed) override;
   void force_resume_read() override;
 
-  int on_read() override;
-  int on_write() override;
+  std::expected<void, Error> on_read() override;
+  std::expected<void, Error> on_write() override;
 
   void on_upstream_change(Upstream *upstream) override;
 
@@ -72,30 +72,32 @@ public:
 
   int initiate_connection();
 
-  int write_first();
-  int read_clear();
-  int write_clear();
-  int read_tls();
-  int write_tls();
+  std::expected<void, Error> write_first();
+  std::expected<void, Error> read_clear();
+  std::expected<void, Error> write_clear();
+  std::expected<void, Error> read_tls();
+  std::expected<void, Error> write_tls();
 
-  int process_input(std::span<const uint8_t> data);
-  int tls_handshake();
+  std::expected<void, Error> process_input(std::span<const uint8_t> data);
+  std::expected<void, Error> tls_handshake();
 
   int connected();
   void signal_write();
-  int actual_signal_write();
+  void actual_signal_write();
 
   // Returns address used to connect to backend.  Could be nullptr.
   const Address *get_raddr() const;
 
-  int noop();
+  std::expected<void, Error> noop() { return {}; }
+  void void_noop() {}
 
   int process_blocked_request_buf();
 
 private:
   Connection conn_;
-  std::function<int(HttpDownstreamConnection &)> on_read_, on_write_,
-    signal_write_;
+  std::function<std::expected<void, Error>(HttpDownstreamConnection &)>
+    on_read_, on_write_;
+  std::function<void(HttpDownstreamConnection &)> signal_write_;
   Worker *worker_;
   // nullptr if TLS is not used.
   SSL_CTX *ssl_ctx_;
