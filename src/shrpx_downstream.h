@@ -33,6 +33,7 @@
 #include <memory>
 #include <chrono>
 #include <algorithm>
+#include <expected>
 
 #include <ev.h>
 
@@ -49,6 +50,7 @@
 #include "http2.h"
 #include "memchunk.h"
 #include "allocator.h"
+#include "errors.h"
 
 using namespace nghttp2;
 
@@ -445,7 +447,7 @@ public:
 
   // Call this method when there is incoming data in downstream
   // connection.
-  int on_read();
+  std::expected<void, Error> on_read();
 
   void repeat_header_timer();
   void stop_header_timer();

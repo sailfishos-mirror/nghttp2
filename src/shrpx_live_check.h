@@ -69,16 +69,16 @@ public:
 
   // Low level I/O operation callback; they are called from do_read()
   // or do_write().
-  int noop();
-  int connected();
-  int tls_handshake();
-  int read_tls();
-  int write_tls();
-  int read_clear();
-  int write_clear();
+  std::expected<void, Error> noop() { return {}; }
+  std::expected<void, Error> connected();
+  std::expected<void, Error> tls_handshake();
+  std::expected<void, Error> read_tls();
+  std::expected<void, Error> write_tls();
+  std::expected<void, Error> read_clear();
+  std::expected<void, Error> write_clear();
 
-  int do_read();
-  int do_write();
+  std::expected<void, Error> do_read();
+  std::expected<void, Error> do_write();
 
   // These functions are used to feed / extract data to
   // nghttp2_session object.
@@ -103,7 +103,7 @@ private:
   std::mt19937 &gen_;
   ev_timer backoff_timer_;
   ev_timer settings_timer_;
-  std::function<int(LiveCheck &)> read_, write_;
+  std::function<std::expected<void, Error>(LiveCheck &)> read_, write_;
   Worker *worker_;
   // nullptr if no TLS is configured
   SSL_CTX *ssl_ctx_;

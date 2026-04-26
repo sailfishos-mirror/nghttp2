@@ -589,10 +589,6 @@ int Http2DownstreamConnection::resume_read(IOCtrlReason reason,
   return 0;
 }
 
-int Http2DownstreamConnection::on_read() { return 0; }
-
-int Http2DownstreamConnection::on_write() { return 0; }
-
 void Http2DownstreamConnection::attach_stream_data(StreamData *sd) {
   // It is possible sd->dconn is not NULL. sd is detached when
   // on_stream_close_callback. Before that, after MSG_COMPLETE is set

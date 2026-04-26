@@ -93,10 +93,6 @@ int HealthMonitorDownstreamConnection::resume_read(IOCtrlReason reason,
 
 void HealthMonitorDownstreamConnection::force_resume_read() {}
 
-int HealthMonitorDownstreamConnection::on_read() { return 0; }
-
-int HealthMonitorDownstreamConnection::on_write() { return 0; }
-
 void HealthMonitorDownstreamConnection::on_upstream_change(Upstream *upstream) {
 }
 

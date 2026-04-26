@@ -130,11 +130,9 @@ void timeoutcb(struct ev_loop *loop, ev_timer *w, int revents) {
 
 namespace {
 void readcb(struct ev_loop *loop, ev_io *w, int revents) {
-  int rv;
   auto conn = static_cast<Connection *>(w->data);
   auto http2session = static_cast<Http2Session *>(conn->data);
-  rv = http2session->do_read();
-  if (rv != 0) {
+  if (!http2session->do_read()) {
     delete http2session;
 
     return;
@@ -145,11 +143,9 @@ void readcb(struct ev_loop *loop, ev_io *w, int revents) {
 
 namespace {
 void writecb(struct ev_loop *loop, ev_io *w, int revents) {
-  int rv;
   auto conn = static_cast<Connection *>(w->data);
   auto http2session = static_cast<Http2Session *>(conn->data);
-  rv = http2session->do_write();
-  if (rv != 0) {
+  if (!http2session->do_write()) {
     delete http2session;
 
     return;
@@ -596,7 +592,9 @@ int Http2Session::initiate_connection() {
       on_read_ = &Http2Session::read_noop;
       on_write_ = &Http2Session::write_noop;
 
-      return connected();
+      if (!connected()) {
+        return -1;
+      }
     }
 
     write_ = &Http2Session::connected;
@@ -797,7 +795,7 @@ void call_downstream_readcb(Http2Session *http2session,
   if (!upstream) {
     return;
   }
-  if (upstream->downstream_read(downstream->get_downstream_connection()) != 0) {
+  if (!upstream->downstream_read(downstream->get_downstream_connection())) {
     delete upstream->get_client_handler();
   }
 }
@@ -1217,8 +1215,7 @@ int on_frame_recv_callback(nghttp2_session *session, const nghttp2_frame *frame,
     }
     auto downstream = sd->dconn->get_downstream();
     auto upstream = downstream->get_upstream();
-    rv = upstream->on_downstream_body(downstream, {}, true);
-    if (rv != 0) {
+    if (auto rv = upstream->on_downstream_body(downstream, {}, true); !rv) {
       http2session->submit_rst_stream(frame->hd.stream_id,
                                       NGHTTP2_INTERNAL_ERROR);
       downstream->set_response_state(DownstreamState::MSG_RESET);
@@ -1230,7 +1227,7 @@ int on_frame_recv_callback(nghttp2_session *session, const nghttp2_frame *frame,
           DownstreamState::HEADER_COMPLETE) {
         downstream->set_response_state(DownstreamState::MSG_COMPLETE);
 
-        rv = upstream->on_downstream_body_complete(downstream);
+        auto rv = upstream->on_downstream_body_complete(downstream);
 
         if (rv != 0) {
           downstream->set_response_state(DownstreamState::MSG_RESET);
@@ -1385,7 +1382,6 @@ namespace {
 int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
                                 int32_t stream_id, const uint8_t *data,
                                 size_t len, void *user_data) {
-  int rv;
   auto http2session = static_cast<Http2Session *>(user_data);
   auto sd = static_cast<StreamData *>(
     nghttp2_session_get_stream_user_data(session, stream_id));
@@ -1429,8 +1425,8 @@ int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
   resp.unconsumed_body_length += len;
 
   auto upstream = downstream->get_upstream();
-  rv = upstream->on_downstream_body(downstream, {data, len}, false);
-  if (rv != 0) {
+  if (auto rv = upstream->on_downstream_body(downstream, {data, len}, false);
+      !rv) {
     http2session->submit_rst_stream(stream_id, NGHTTP2_INTERNAL_ERROR);
 
     if (http2session->consume(stream_id, len) != 0) {
@@ -1727,8 +1723,8 @@ int Http2Session::connection_made() {
   return 0;
 }
 
-int Http2Session::do_read() { return read_(*this); }
-int Http2Session::do_write() { return write_(*this); }
+std::expected<void, Error> Http2Session::do_read() { return read_(*this); }
+std::expected<void, Error> Http2Session::do_write() { return write_(*this); }
 
 int Http2Session::on_read(std::span<const uint8_t> data) {
   return on_read_(*this, data);
@@ -1938,13 +1934,11 @@ ConnectionCheck Http2Session::get_connection_check_state() const {
   return connection_check_state_;
 }
 
-int Http2Session::noop() { return 0; }
-
 int Http2Session::read_noop(std::span<const uint8_t> data) { return 0; }
 
 int Http2Session::write_noop() { return 0; }
 
-int Http2Session::connected() {
+std::expected<void, Error> Http2Session::connected() {
   auto sock_error = util::get_socket_error(conn_.fd);
   if (sock_error != 0) {
     Log{WARN, this} << "Backend connect failed; addr="
@@ -1953,7 +1947,7 @@ int Http2Session::connected() {
 
     downstream_failure(addr_, raddr_);
 
-    return -1;
+    return std::unexpected{Error::CONNECT_FAIL};
   }
 
   if (log_enabled(INFO)) {
@@ -1983,36 +1977,36 @@ int Http2Session::connected() {
 
   if (connection_made() != 0) {
     state_ = Http2SessionState::CONNECT_FAILING;
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
-  return 0;
+  return {};
 }
 
-int Http2Session::read_clear() {
+std::expected<void, Error> Http2Session::read_clear() {
   conn_.last_read = std::chrono::steady_clock::now();
 
   std::array<uint8_t, 16_k> rawbuf;
   auto buf = std::span{rawbuf};
 
   for (;;) {
-    auto nread = conn_.read_clear(buf);
+    auto maybe_data = conn_.read_clear(buf);
+    if (!maybe_data) {
+      return std::unexpected{maybe_data.error()};
+    }
 
-    if (nread == 0) {
+    auto data = *maybe_data;
+    if (data.empty()) {
       return write_clear();
     }
 
-    if (nread < 0) {
-      return static_cast<int>(nread);
-    }
-
-    if (on_read(buf.first(as_unsigned(nread))) != 0) {
-      return -1;
+    if (on_read(data) != 0) {
+      return std::unexpected{Error::INTERNAL};
     }
   }
 }
 
-int Http2Session::write_clear() {
+std::expected<void, Error> Http2Session::write_clear() {
   conn_.last_read = std::chrono::steady_clock::now();
 
   std::array<struct iovec, MAX_WR_IOVCNT> iovbuf;
@@ -2021,7 +2015,7 @@ int Http2Session::write_clear() {
     auto iov = wb_.riovec(iovbuf);
     if (iov.empty()) {
       if (on_write() != 0) {
-        return -1;
+        return std::unexpected{Error::INTERNAL};
       }
 
       iov = wb_.riovec(iovbuf);
@@ -2030,13 +2024,8 @@ int Http2Session::write_clear() {
       }
     }
 
-    auto nwrite = conn_.writev_clear(iov);
-
-    if (nwrite == 0) {
-      return 0;
-    }
-
-    if (nwrite < 0) {
+    auto maybe_nwrite = conn_.writev_clear(iov);
+    if (!maybe_nwrite) {
       // We may have pending data in receive buffer which may contain
       // part of response body.  So keep reading.  Invoke read event
       // to get read(2) error just in case.
@@ -2045,27 +2034,30 @@ int Http2Session::write_clear() {
       break;
     }
 
-    wb_.drain(as_unsigned(nwrite));
+    auto nwrite = *maybe_nwrite;
+    if (nwrite == 0) {
+      return {};
+    }
+
+    wb_.drain(nwrite);
   }
 
   conn_.wlimit.stopw();
   ev_timer_stop(conn_.loop, &conn_.wt);
 
-  return 0;
+  return {};
 }
 
-int Http2Session::tls_handshake() {
+std::expected<void, Error> Http2Session::tls_handshake() {
   conn_.last_read = std::chrono::steady_clock::now();
 
   ERR_clear_error();
 
-  auto rv = conn_.tls_handshake();
+  if (auto rv = conn_.tls_handshake(); !rv) {
+    if (rv.error() == Error::TLS_HANDSHAKE_INPROGRESS) {
+      return {};
+    }
 
-  if (rv == SHRPX_ERR_INPROGRESS) {
-    return 0;
-  }
-
-  if (rv < 0) {
     downstream_failure(addr_, raddr_);
 
     return rv;
@@ -2079,7 +2071,7 @@ int Http2Session::tls_handshake() {
       tls::check_cert(conn_.tls.ssl, addr_, raddr_) != 0) {
     downstream_failure(addr_, raddr_);
 
-    return -1;
+    return std::unexpected{Error::TLS_VERIFY_PEER};
   }
 
   read_ = &Http2Session::read_tls;
@@ -2087,13 +2079,13 @@ int Http2Session::tls_handshake() {
 
   if (connection_made() != 0) {
     state_ = Http2SessionState::CONNECT_FAILING;
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
-  return 0;
+  return {};
 }
 
-int Http2Session::read_tls() {
+std::expected<void, Error> Http2Session::read_tls() {
   conn_.last_read = std::chrono::steady_clock::now();
 
   std::array<uint8_t, 16_k> rawbuf;
@@ -2102,23 +2094,23 @@ int Http2Session::read_tls() {
   ERR_clear_error();
 
   for (;;) {
-    auto nread = conn_.read_tls(buf);
+    auto maybe_data = conn_.read_tls(buf);
+    if (!maybe_data) {
+      return std::unexpected{maybe_data.error()};
+    }
 
-    if (nread == 0) {
+    auto data = *maybe_data;
+    if (data.empty()) {
       return write_tls();
     }
 
-    if (nread < 0) {
-      return static_cast<int>(nread);
-    }
-
-    if (on_read(buf.first(as_unsigned(nread))) != 0) {
-      return -1;
+    if (on_read(data) != 0) {
+      return std::unexpected{Error::INTERNAL};
     }
   }
 }
 
-int Http2Session::write_tls() {
+std::expected<void, Error> Http2Session::write_tls() {
   conn_.last_read = std::chrono::steady_clock::now();
 
   ERR_clear_error();
@@ -2127,7 +2119,7 @@ int Http2Session::write_tls() {
     auto data = wb_.peek();
     if (data.empty()) {
       if (on_write() != 0) {
-        return -1;
+        return std::unexpected{Error::INTERNAL};
       }
 
       data = wb_.peek();
@@ -2137,13 +2129,8 @@ int Http2Session::write_tls() {
       }
     }
 
-    auto nwrite = conn_.write_tls(data);
-
-    if (nwrite == 0) {
-      return 0;
-    }
-
-    if (nwrite < 0) {
+    auto maybe_nwrite = conn_.write_tls(data);
+    if (!maybe_nwrite) {
       // We may have pending data in receive buffer which may contain
       // part of response body.  So keep reading.  Invoke read event
       // to get read(2) error just in case.
@@ -2152,18 +2139,23 @@ int Http2Session::write_tls() {
       break;
     }
 
-    wb_.drain(as_unsigned(nwrite));
+    auto nwrite = *maybe_nwrite;
+    if (nwrite == 0) {
+      return {};
+    }
+
+    wb_.drain(nwrite);
   }
 
   conn_.wlimit.stopw();
   ev_timer_stop(conn_.loop, &conn_.wt);
 
-  return 0;
+  return {};
 }
 
-int Http2Session::write_void() {
+std::expected<void, Error> Http2Session::write_void() {
   conn_.wlimit.stopw();
-  return 0;
+  return {};
 }
 
 bool Http2Session::should_hard_fail() const {

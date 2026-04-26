@@ -58,6 +58,8 @@ enum class Error {
   SYSCALL,
   // C library error (e.g., error from getaddrinfo)
   LIBC,
+  // HTTP2 library error (e.g., error from nghttp2 API)
+  HTTP2,
   // HTTP3 library error (e.g., error from nghttp3 API)
   HTTP3,
   // QUIC library error (e.g., error from ngtcp2 API)
@@ -65,13 +67,13 @@ enum class Error {
   // sending packet is blocked by kernel
   SEND_BLOCKED,
   // QUIC connection is in close-wait.
-  CLOSE_WAIT,
+  QUIC_CLOSE_WAIT,
   // QUIC connection should be retried.
-  RETRY_CONN,
+  QUIC_RETRY_CONN,
   // QUIC connection should be dropped.
-  DROP_CONN,
+  QUIC_DROP_CONN,
   // Retry token is unreadable, and should be ignored.
-  UNREADABLE_TOKEN,
+  QUIC_UNREADABLE_TOKEN,
   // Network related error in general.
   NETWORK,
   // EOF is received from socket.
@@ -88,6 +90,14 @@ enum class Error {
   INVALID_PEM_TYPE,
   // Entity is not found.
   ENTITY_NOT_FOUND,
+  // Everything done for this connection.
+  DONE,
+  // TLS peer verification error.
+  TLS_VERIFY_PEER,
+  // Connection cannot be established.
+  CONNECT_FAIL,
+  // ALPN negotiation failure.
+  ALPN,
 };
 
 } // namespace nghttp2
@@ -130,6 +140,9 @@ struct std::formatter<nghttp2::Error>
     case nghttp2::Error::LIBC:
       s = "libc"sv;
       break;
+    case nghttp2::Error::HTTP2:
+      s = "HTTP2"sv;
+      break;
     case nghttp2::Error::HTTP3:
       s = "HTTP3"sv;
       break;
@@ -139,17 +152,17 @@ struct std::formatter<nghttp2::Error>
     case nghttp2::Error::SEND_BLOCKED:
       s = "send blocked"sv;
       break;
-    case nghttp2::Error::CLOSE_WAIT:
-      s = "close wait"sv;
+    case nghttp2::Error::QUIC_CLOSE_WAIT:
+      s = "QUIC close wait"sv;
       break;
-    case nghttp2::Error::RETRY_CONN:
-      s = "retry connection"sv;
+    case nghttp2::Error::QUIC_RETRY_CONN:
+      s = "QUIC retry connection"sv;
       break;
-    case nghttp2::Error::DROP_CONN:
-      s = "drop connection"sv;
+    case nghttp2::Error::QUIC_DROP_CONN:
+      s = "QUIC drop connection"sv;
       break;
-    case nghttp2::Error::UNREADABLE_TOKEN:
-      s = "unreadable token"sv;
+    case nghttp2::Error::QUIC_UNREADABLE_TOKEN:
+      s = "QUIC unreadable token"sv;
       break;
     case nghttp2::Error::NETWORK:
       s = "network"sv;
@@ -174,6 +187,18 @@ struct std::formatter<nghttp2::Error>
       break;
     case nghttp2::Error::ENTITY_NOT_FOUND:
       s = "entity not found"sv;
+      break;
+    case nghttp2::Error::DONE:
+      s = "done"sv;
+      break;
+    case nghttp2::Error::TLS_VERIFY_PEER:
+      s = "TLS peer verification failed"sv;
+      break;
+    case nghttp2::Error::CONNECT_FAIL:
+      s = "connection failure"sv;
+      break;
+    case nghttp2::Error::ALPN:
+      s = "ALPN negotiation failure"sv;
       break;
     }
 

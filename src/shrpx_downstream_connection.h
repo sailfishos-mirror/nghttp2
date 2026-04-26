@@ -29,8 +29,12 @@
 
 #include <memory>
 #include <span>
+#include <expected>
 
 #include "shrpx_io_control.h"
+#include "errors.h"
+
+using namespace nghttp2;
 
 namespace shrpx {
 
@@ -55,8 +59,8 @@ public:
   virtual int resume_read(IOCtrlReason reason, size_t consumed) = 0;
   virtual void force_resume_read() = 0;
 
-  virtual int on_read() = 0;
-  virtual int on_write() = 0;
+  virtual std::expected<void, Error> on_read() = 0;
+  virtual std::expected<void, Error> on_write() = 0;
   virtual int on_timeout() { return 0; }
 
   virtual void on_upstream_change(Upstream *upstream) = 0;

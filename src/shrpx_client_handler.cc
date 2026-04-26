@@ -133,20 +133,20 @@ int ClientHandler::read_clear() {
       return 0;
     }
 
-    auto nread = conn_.read_clear(rb_.wbuffer());
+    auto maybe_data = conn_.read_clear(rb_.wbuffer());
+    if (!maybe_data) {
+      return -1;
+    }
 
-    if (nread == 0) {
+    auto data = *maybe_data;
+    if (data.empty()) {
       if (rb_.rleft() == 0) {
         rb_.release_chunk();
       }
       return 0;
     }
 
-    if (nread < 0) {
-      return -1;
-    }
-
-    rb_.write(as_unsigned(nread));
+    rb_.write(data.size());
     should_break = true;
   }
 }
@@ -164,16 +164,17 @@ int ClientHandler::write_clear() {
       break;
     }
 
-    auto nwrite = conn_.writev_clear(iov);
-    if (nwrite < 0) {
+    auto maybe_nwrite = conn_.writev_clear(iov);
+    if (!maybe_nwrite) {
       return -1;
     }
 
+    auto nwrite = *maybe_nwrite;
     if (nwrite == 0) {
       return 0;
     }
 
-    upstream_->response_drain(as_unsigned(nwrite));
+    upstream_->response_drain(nwrite);
   }
 
   conn_.wlimit.stopw();
@@ -187,19 +188,22 @@ int ClientHandler::proxy_protocol_peek_clear() {
 
   assert(rb_.rleft() == 0);
 
-  auto nread = conn_.peek_clear(rb_.wbuffer());
-  if (nread < 0) {
+  auto maybe_data = conn_.peek_clear(rb_.wbuffer());
+  if (!maybe_data) {
     return -1;
   }
-  if (nread == 0) {
+
+  auto data = *maybe_data;
+  if (data.empty()) {
     return 0;
   }
 
   if (log_enabled(INFO)) {
-    Log{INFO, this} << "PROXY-protocol: Peek " << nread << " bytes from socket";
+    Log{INFO, this} << "PROXY-protocol: Peek " << data.size()
+                    << " bytes from socket";
   }
 
-  rb_.write(as_unsigned(nread));
+  rb_.write(data.size());
 
   if (on_read() != 0) {
     return -1;
@@ -216,12 +220,11 @@ int ClientHandler::tls_handshake() {
   ERR_clear_error();
 
   auto rv = conn_.tls_handshake();
+  if (!rv) {
+    if (rv.error() == Error::TLS_HANDSHAKE_INPROGRESS) {
+      return 0;
+    }
 
-  if (rv == SHRPX_ERR_INPROGRESS) {
-    return 0;
-  }
-
-  if (rv < 0) {
     return -1;
   }
 
@@ -262,20 +265,20 @@ int ClientHandler::read_tls() {
       return 0;
     }
 
-    auto nread = conn_.read_tls(rb_.wbuffer());
+    auto maybe_data = conn_.read_tls(rb_.wbuffer());
+    if (!maybe_data) {
+      return -1;
+    }
 
-    if (nread == 0) {
+    auto data = *maybe_data;
+    if (data.empty()) {
       if (rb_.rleft() == 0) {
         rb_.release_chunk();
       }
       return 0;
     }
 
-    if (nread < 0) {
-      return -1;
-    }
-
-    rb_.write(as_unsigned(nread));
+    rb_.write(data.size());
     should_break = true;
   }
 }
@@ -293,16 +296,17 @@ int ClientHandler::write_tls() {
       break;
     }
 
-    auto nwrite = conn_.write_tls(data);
-    if (nwrite < 0) {
+    auto maybe_nwrite = conn_.write_tls(data);
+    if (!maybe_nwrite) {
       return -1;
     }
 
+    auto nwrite = *maybe_nwrite;
     if (nwrite == 0) {
       return 0;
     }
 
-    upstream_->response_drain(as_unsigned(nwrite));
+    upstream_->response_drain(nwrite);
   }
 
   conn_.start_tls_write_idle();
@@ -1283,7 +1287,7 @@ int ClientHandler::on_proxy_protocol_finish() {
 
   rb_.reset();
 
-  if (conn_.read_nolim_clear({rb_.pos(), len}) < 0) {
+  if (!conn_.read_nolim_clear({rb_.pos(), len})) {
     return -1;
   }
 
