@@ -63,7 +63,7 @@ public:
 
   std::expected<void, Error> on_read() override { return {}; }
   std::expected<void, Error> on_write() override { return {}; }
-  int on_timeout() override;
+  std::expected<void, Error> on_timeout() override;
 
   void on_upstream_change(Upstream *upstream) override {}
 
@@ -80,8 +80,9 @@ public:
   void attach_stream_data(StreamData *sd);
   StreamData *detach_stream_data();
 
-  int submit_rst_stream(Downstream *downstream,
-                        uint32_t error_code = NGHTTP2_INTERNAL_ERROR);
+  std::expected<void, Error>
+  submit_rst_stream(Downstream *downstream,
+                    uint32_t error_code = NGHTTP2_INTERNAL_ERROR);
 
   Http2DownstreamConnection *dlnext, *dlprev;
 

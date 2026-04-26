@@ -754,7 +754,8 @@ int Http2Session::submit_request(Http2DownstreamConnection *dconn,
   return 0;
 }
 
-int Http2Session::submit_rst_stream(int32_t stream_id, uint32_t error_code) {
+std::expected<void, Error>
+Http2Session::submit_rst_stream(int32_t stream_id, uint32_t error_code) {
   assert(state_ == Http2SessionState::CONNECTED);
   if (log_enabled(INFO)) {
     Log{INFO, this} << "RST_STREAM stream_id=" << stream_id
@@ -765,9 +766,9 @@ int Http2Session::submit_rst_stream(int32_t stream_id, uint32_t error_code) {
   if (rv != 0) {
     Log{FATAL, this} << "nghttp2_submit_rst_stream() failed: "
                      << nghttp2_strerror(rv);
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
-  return 0;
+  return {};
 }
 
 nghttp2_session *Http2Session::get_session() const { return session_; }

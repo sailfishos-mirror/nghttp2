@@ -125,7 +125,8 @@ public:
   int submit_request(Http2DownstreamConnection *dconn, const nghttp2_nv *nva,
                      size_t nvlen, const nghttp2_data_provider2 *data_prd);
 
-  int submit_rst_stream(int32_t stream_id, uint32_t error_code);
+  std::expected<void, Error> submit_rst_stream(int32_t stream_id,
+                                               uint32_t error_code);
 
   int terminate_session(uint32_t error_code);
 

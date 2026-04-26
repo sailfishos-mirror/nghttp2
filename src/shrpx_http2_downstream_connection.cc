@@ -122,7 +122,7 @@ void Http2DownstreamConnection::detach_downstream(Downstream *downstream) {
   auto &resp = downstream_->response();
 
   if (downstream_->get_downstream_stream_id() != -1) {
-    if (submit_rst_stream(downstream) == 0) {
+    if (submit_rst_stream(downstream)) {
       http2session_->signal_write();
     }
 
@@ -140,15 +140,15 @@ void Http2DownstreamConnection::detach_downstream(Downstream *downstream) {
   downstream_ = nullptr;
 }
 
-int Http2DownstreamConnection::submit_rst_stream(Downstream *downstream,
-                                                 uint32_t error_code) {
-  int rv = -1;
+std::expected<void, Error>
+Http2DownstreamConnection::submit_rst_stream(Downstream *downstream,
+                                             uint32_t error_code) {
   if (http2session_->get_state() == Http2SessionState::CONNECTED &&
       downstream->get_downstream_stream_id() != -1) {
     switch (downstream->get_response_state()) {
     case DownstreamState::MSG_RESET:
     case DownstreamState::MSG_BAD_HEADER:
-      return rv;
+      return std::unexpected{Error::INTERNAL};
     default:
       break;
     }
@@ -159,10 +159,10 @@ int Http2DownstreamConnection::submit_rst_stream(Downstream *downstream,
                       << downstream->get_downstream_stream_id()
                       << ", error_code=" << error_code;
     }
-    rv = http2session_->submit_rst_stream(
+    return http2session_->submit_rst_stream(
       static_cast<int32_t>(downstream->get_downstream_stream_id()), error_code);
   }
-  return rv;
+  return std::unexpected{Error::INTERNAL};
 }
 
 namespace {
@@ -611,12 +611,18 @@ StreamData *Http2DownstreamConnection::detach_stream_data() {
   return nullptr;
 }
 
-int Http2DownstreamConnection::on_timeout() {
+std::expected<void, Error> Http2DownstreamConnection::on_timeout() {
   if (!downstream_) {
-    return 0;
+    return {};
   }
 
-  return submit_rst_stream(downstream_, NGHTTP2_NO_ERROR);
+  if (auto rv = submit_rst_stream(downstream_, NGHTTP2_NO_ERROR); !rv) {
+    return rv;
+  }
+
+  http2session_->signal_write();
+
+  return {};
 }
 
 const std::shared_ptr<DownstreamAddrGroup> &

@@ -62,7 +62,7 @@ public:
 
   virtual std::expected<void, Error> on_read() = 0;
   virtual std::expected<void, Error> on_write() = 0;
-  virtual int on_timeout() { return 0; }
+  virtual std::expected<void, Error> on_timeout() { return {}; }
 
   virtual void on_upstream_change(Upstream *upstream) = 0;
 
