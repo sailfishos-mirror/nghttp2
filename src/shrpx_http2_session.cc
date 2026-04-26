@@ -632,19 +632,20 @@ int htp_hdrs_completecb(llhttp_t *htp) {
 }
 } // namespace
 
-int Http2Session::downstream_read_proxy(std::span<const uint8_t> data) {
+std::expected<void, Error>
+Http2Session::downstream_read_proxy(std::span<const uint8_t> data) {
   auto htperr = llhttp_execute(
     proxy_htp_.get(), reinterpret_cast<const char *>(data.data()), data.size());
   if (htperr == HPE_PAUSED) {
     switch (state_) {
     case Http2SessionState::PROXY_CONNECTED:
       // Initiate SSL/TLS handshake through established tunnel.
-      if (!initiate_connection()) {
-        return -1;
+      if (auto rv = initiate_connection(); !rv) {
+        return rv;
       }
-      return 0;
+      return {};
     case Http2SessionState::PROXY_FAILED:
-      return -1;
+      return std::unexpected{Error::INTERNAL};
     default:
       break;
     }
@@ -653,13 +654,13 @@ int Http2Session::downstream_read_proxy(std::span<const uint8_t> data) {
   }
 
   if (htperr != HPE_OK) {
-    return -1;
+    return std::unexpected{Error::HTTP1};
   }
 
-  return 0;
+  return {};
 }
 
-int Http2Session::downstream_connect_proxy() {
+std::expected<void, Error> Http2Session::downstream_connect_proxy() {
   if (log_enabled(INFO)) {
     Log{INFO, this} << "Connected to the proxy";
   }
@@ -688,7 +689,7 @@ int Http2Session::downstream_connect_proxy() {
   on_write_ = &Http2Session::write_noop;
 
   signal_write();
-  return 0;
+  return {};
 }
 
 void Http2Session::add_downstream_connection(Http2DownstreamConnection *dconn) {
@@ -1722,18 +1723,20 @@ std::expected<void, Error> Http2Session::connection_made() {
 std::expected<void, Error> Http2Session::do_read() { return read_(*this); }
 std::expected<void, Error> Http2Session::do_write() { return write_(*this); }
 
-int Http2Session::on_read(std::span<const uint8_t> data) {
+std::expected<void, Error>
+Http2Session::on_read(std::span<const uint8_t> data) {
   return on_read_(*this, data);
 }
 
-int Http2Session::on_write() { return on_write_(*this); }
+std::expected<void, Error> Http2Session::on_write() { return on_write_(*this); }
 
-int Http2Session::downstream_read(std::span<const uint8_t> data) {
+std::expected<void, Error>
+Http2Session::downstream_read(std::span<const uint8_t> data) {
   auto rv = nghttp2_session_mem_recv2(session_, data.data(), data.size());
   if (rv < 0) {
     Log{ERROR, this} << "nghttp2_session_mem_recv2() returned error: "
                      << nghttp2_strerror(static_cast<int>(rv));
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   if (nghttp2_session_want_read(session_) == 0 &&
@@ -1741,21 +1744,21 @@ int Http2Session::downstream_read(std::span<const uint8_t> data) {
     if (log_enabled(INFO)) {
       Log{INFO, this} << "No more read/write for this HTTP2 session";
     }
-    return -1;
+    return std::unexpected{Error::DONE};
   }
 
   signal_write();
-  return 0;
+  return {};
 }
 
-int Http2Session::downstream_write() {
+std::expected<void, Error> Http2Session::downstream_write() {
   for (;;) {
     const uint8_t *data;
     auto datalen = nghttp2_session_mem_send2(session_, &data);
     if (datalen < 0) {
       Log{ERROR, this} << "nghttp2_session_mem_send2() returned error: "
                        << nghttp2_strerror(static_cast<int>(datalen));
-      return -1;
+      return std::unexpected{Error::HTTP2};
     }
     if (datalen == 0) {
       break;
@@ -1772,10 +1775,10 @@ int Http2Session::downstream_write() {
     if (log_enabled(INFO)) {
       Log{INFO, this} << "No more read/write for this session";
     }
-    return -1;
+    return std::unexpected{Error::DONE};
   }
 
-  return 0;
+  return {};
 }
 
 void Http2Session::signal_write() {
@@ -1932,10 +1935,6 @@ ConnectionCheck Http2Session::get_connection_check_state() const {
   return connection_check_state_;
 }
 
-int Http2Session::read_noop(std::span<const uint8_t> data) { return 0; }
-
-int Http2Session::write_noop() { return 0; }
-
 std::expected<void, Error> Http2Session::connected() {
   auto sock_error = util::get_socket_error(conn_.fd);
   if (sock_error != 0) {
@@ -1998,8 +1997,8 @@ std::expected<void, Error> Http2Session::read_clear() {
       return write_clear();
     }
 
-    if (on_read(data) != 0) {
-      return std::unexpected{Error::INTERNAL};
+    if (auto rv = on_read(data); !rv) {
+      return rv;
     }
   }
 }
@@ -2012,8 +2011,8 @@ std::expected<void, Error> Http2Session::write_clear() {
   for (;;) {
     auto iov = wb_.riovec(iovbuf);
     if (iov.empty()) {
-      if (on_write() != 0) {
-        return std::unexpected{Error::INTERNAL};
+      if (auto rv = on_write(); !rv) {
+        return rv;
       }
 
       iov = wb_.riovec(iovbuf);
@@ -2102,8 +2101,8 @@ std::expected<void, Error> Http2Session::read_tls() {
       return write_tls();
     }
 
-    if (on_read(data) != 0) {
-      return std::unexpected{Error::INTERNAL};
+    if (auto rv = on_read(data); !rv) {
+      return rv;
     }
   }
 }
@@ -2116,8 +2115,8 @@ std::expected<void, Error> Http2Session::write_tls() {
   for (;;) {
     auto data = wb_.peek();
     if (data.empty()) {
-      if (on_write() != 0) {
-        return std::unexpected{Error::INTERNAL};
+      if (auto rv = on_write(); !rv) {
+        return rv;
       }
 
       data = wb_.peek();

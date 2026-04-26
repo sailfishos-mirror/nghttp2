@@ -58,6 +58,8 @@ enum class Error {
   SYSCALL,
   // C library error (e.g., error from getaddrinfo)
   LIBC,
+  // HTTP1 library error (e.g., error from llhttp API)
+  HTTP1,
   // HTTP2 library error (e.g., error from nghttp2 API)
   HTTP2,
   // HTTP3 library error (e.g., error from nghttp3 API)
@@ -145,6 +147,9 @@ struct std::formatter<nghttp2::Error>
       break;
     case nghttp2::Error::LIBC:
       s = "libc"sv;
+      break;
+    case nghttp2::Error::HTTP1:
+      s = "HTTP1"sv;
       break;
     case nghttp2::Error::HTTP2:
       s = "HTTP2"sv;

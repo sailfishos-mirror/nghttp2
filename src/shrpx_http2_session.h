@@ -142,8 +142,8 @@ public:
   std::expected<void, Error> do_read();
   std::expected<void, Error> do_write();
 
-  int on_read(std::span<const uint8_t> data);
-  int on_write();
+  std::expected<void, Error> on_read(std::span<const uint8_t> data);
+  std::expected<void, Error> on_write();
 
   std::expected<void, Error> connected();
   std::expected<void, Error> read_clear();
@@ -155,15 +155,18 @@ public:
   // watcher.
   std::expected<void, Error> write_void();
 
-  int downstream_read_proxy(std::span<const uint8_t> data);
-  int downstream_connect_proxy();
+  std::expected<void, Error>
+  downstream_read_proxy(std::span<const uint8_t> data);
+  std::expected<void, Error> downstream_connect_proxy();
 
-  int downstream_read(std::span<const uint8_t> data);
-  int downstream_write();
+  std::expected<void, Error> downstream_read(std::span<const uint8_t> data);
+  std::expected<void, Error> downstream_write();
 
   std::expected<void, Error> noop() { return {}; }
-  int read_noop(std::span<const uint8_t> data);
-  int write_noop();
+  std::expected<void, Error> read_noop(std::span<const uint8_t> data) {
+    return {};
+  }
+  std::expected<void, Error> write_noop() { return {}; }
 
   void signal_write();
 
@@ -273,8 +276,10 @@ private:
   DList<Http2DownstreamConnection> dconns_;
   DList<StreamData> streams_;
   std::function<std::expected<void, Error>(Http2Session &)> read_, write_;
-  std::function<int(Http2Session &, std::span<const uint8_t>)> on_read_;
-  std::function<int(Http2Session &)> on_write_;
+  std::function<std::expected<void, Error>(Http2Session &,
+                                           std::span<const uint8_t>)>
+    on_read_;
+  std::function<std::expected<void, Error>(Http2Session &)> on_write_;
   // Used to parse the response from HTTP proxy
   std::unique_ptr<llhttp_t> proxy_htp_;
   Worker *worker_;
