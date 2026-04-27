@@ -88,9 +88,8 @@ void APIDownstreamConnection::detach_downstream(Downstream *downstream) {
   downstream_ = nullptr;
 }
 
-int APIDownstreamConnection::send_reply(unsigned int http_status,
-                                        APIStatusCode api_status,
-                                        std::string_view data) {
+std::expected<void, Error> APIDownstreamConnection::send_reply(
+  unsigned int http_status, APIStatusCode api_status, std::string_view data) {
   shutdown_read_ = true;
 
   auto upstream = downstream_->get_upstream();
@@ -149,11 +148,7 @@ int APIDownstreamConnection::send_reply(unsigned int http_status,
     break;
   }
 
-  if (!upstream->send_reply(downstream_, buf)) {
-    return -1;
-  }
-
-  return 0;
+  return upstream->send_reply(downstream_, buf);
 }
 
 namespace {
@@ -258,7 +253,7 @@ std::expected<void, Error> APIDownstreamConnection::push_request_headers() {
   return {};
 }
 
-int APIDownstreamConnection::error_method_not_allowed() {
+std::expected<void, Error> APIDownstreamConnection::error_method_not_allowed() {
   auto &resp = downstream_->response();
 
   size_t len = 0;
