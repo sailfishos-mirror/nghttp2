@@ -348,7 +348,9 @@ void Worker::replace_downstream_config(
 #ifdef HAVE_MRUBY
     auto mruby_ctx_it = shared_mruby_ctxs.find(src.mruby_file);
     if (mruby_ctx_it == std::ranges::end(shared_mruby_ctxs)) {
-      shared_addr->mruby_ctx = mruby::create_mruby_context(src.mruby_file);
+      auto maybe_mruby_ctx = mruby::create_mruby_context(src.mruby_file);
+      assert(maybe_mruby_ctx);
+      shared_addr->mruby_ctx = std::move(*maybe_mruby_ctx);
       assert(shared_addr->mruby_ctx);
       shared_mruby_ctxs.emplace(src.mruby_file, shared_addr->mruby_ctx);
     } else {
@@ -661,10 +663,12 @@ std::mt19937 &Worker::get_randgen() { return randgen_; }
 
 #ifdef HAVE_MRUBY
 int Worker::create_mruby_context() {
-  mruby_ctx_ = mruby::create_mruby_context(get_config()->mruby_file);
-  if (!mruby_ctx_) {
+  auto maybe_mruby_ctx = mruby::create_mruby_context(get_config()->mruby_file);
+  if (!maybe_mruby_ctx) {
     return -1;
   }
+
+  mruby_ctx_ = std::move(*maybe_mruby_ctx);
 
   return 0;
 }

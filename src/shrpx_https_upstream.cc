@@ -481,7 +481,7 @@ int htp_hdrs_completecb(llhttp_t *htp) {
   auto worker = handler->get_worker();
   auto mruby_ctx = worker->get_mruby_context();
 
-  if (mruby_ctx->run_on_request_proc(downstream) != 0) {
+  if (!mruby_ctx->run_on_request_proc(downstream)) {
     resp.http_status = 500;
     return -1;
   }
@@ -528,7 +528,7 @@ int htp_hdrs_completecb(llhttp_t *htp) {
   if (group) {
     const auto &dmruby_ctx = group->shared_addr->mruby_ctx;
 
-    if (dmruby_ctx->run_on_request_proc(downstream) != 0) {
+    if (!dmruby_ctx->run_on_request_proc(downstream)) {
       resp.http_status = 500;
       return -1;
     }
@@ -1146,9 +1146,9 @@ HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
     if (group) {
       const auto &dmruby_ctx = group->shared_addr->mruby_ctx;
 
-      if (dmruby_ctx->run_on_response_proc(downstream) != 0) {
+      if (auto rv = dmruby_ctx->run_on_response_proc(downstream); !rv) {
         error_reply(500);
-        return std::unexpected{Error::INTERNAL};
+        return rv;
       }
 
       if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
@@ -1159,9 +1159,9 @@ HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
     auto worker = handler_->get_worker();
     auto mruby_ctx = worker->get_mruby_context();
 
-    if (mruby_ctx->run_on_response_proc(downstream) != 0) {
+    if (auto rv = mruby_ctx->run_on_response_proc(downstream); !rv) {
       error_reply(500);
-      return std::unexpected{Error::INTERNAL};
+      return rv;
     }
 
     if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
