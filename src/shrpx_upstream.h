@@ -85,8 +85,8 @@ public:
   virtual void pause_read(IOCtrlReason reason) = 0;
   virtual std::expected<void, Error>
   resume_read(IOCtrlReason reason, Downstream *downstream, size_t consumed) = 0;
-  virtual int send_reply(Downstream *downstream,
-                         std::span<const uint8_t> body) = 0;
+  virtual std::expected<void, Error>
+  send_reply(Downstream *downstream, std::span<const uint8_t> body) = 0;
 
   // Starts server push.  The |downstream| is an associated stream for
   // the pushed resource.  This function returns 0 if it succeeds,

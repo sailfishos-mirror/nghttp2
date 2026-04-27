@@ -91,8 +91,8 @@ public:
   void on_handler_delete() override;
   std::expected<void, Error> on_downstream_reset(Downstream *downstream,
                                                  bool no_retry) override;
-  int send_reply(Downstream *downstream,
-                 std::span<const uint8_t> body) override;
+  std::expected<void, Error> send_reply(Downstream *downstream,
+                                        std::span<const uint8_t> body) override;
   int initiate_push(Downstream *downstream, std::string_view uri) override;
   std::span<struct iovec>
   response_riovec(std::span<struct iovec> iov) const override;

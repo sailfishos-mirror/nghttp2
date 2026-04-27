@@ -1617,8 +1617,9 @@ std::expected<void, Error> Http3Upstream::resume_read(IOCtrlReason reason,
   return {};
 }
 
-int Http3Upstream::send_reply(Downstream *downstream,
-                              std::span<const uint8_t> body) {
+std::expected<void, Error>
+Http3Upstream::send_reply(Downstream *downstream,
+                          std::span<const uint8_t> body) {
   int rv;
 
   nghttp3_data_reader data_read, *data_read_ptr = nullptr;
@@ -1679,7 +1680,7 @@ int Http3Upstream::send_reply(Downstream *downstream,
   if (nghttp3_err_is_fatal(rv)) {
     Log{FATAL, this} << "nghttp3_conn_submit_response() failed: "
                      << nghttp3_strerror(rv);
-    return -1;
+    return std::unexpected{Error::HTTP3};
   }
 
   downstream->set_response_state(DownstreamState::MSG_COMPLETE);
@@ -1690,10 +1691,10 @@ int Http3Upstream::send_reply(Downstream *downstream,
 
   if (shutdown_stream_read(downstream->get_stream_id(), NGHTTP3_H3_NO_ERROR) !=
       0) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
-  return 0;
+  return {};
 }
 
 int Http3Upstream::initiate_push(Downstream *downstream, std::string_view uri) {

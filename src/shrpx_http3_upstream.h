@@ -84,8 +84,8 @@ public:
   std::expected<void, Error> resume_read(IOCtrlReason reason,
                                          Downstream *downstream,
                                          size_t consumed) override;
-  int send_reply(Downstream *downstream,
-                 std::span<const uint8_t> body) override;
+  std::expected<void, Error> send_reply(Downstream *downstream,
+                                        std::span<const uint8_t> body) override;
 
   int initiate_push(Downstream *downstream, std::string_view uri) override;
 

@@ -1476,8 +1476,9 @@ nghttp2_ssize downstream_data_read_callback(nghttp2_session *session,
 }
 } // namespace
 
-int Http2Upstream::send_reply(Downstream *downstream,
-                              std::span<const uint8_t> body) {
+std::expected<void, Error>
+Http2Upstream::send_reply(Downstream *downstream,
+                          std::span<const uint8_t> body) {
   int rv;
 
   nghttp2_data_provider2 data_prd, *data_prd_ptr = nullptr;
@@ -1540,7 +1541,7 @@ int Http2Upstream::send_reply(Downstream *downstream,
   if (nghttp2_is_fatal(rv)) {
     Log{FATAL, this} << "nghttp2_submit_response2() failed: "
                      << nghttp2_strerror(rv);
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   downstream->set_response_state(DownstreamState::MSG_COMPLETE);
@@ -1549,7 +1550,7 @@ int Http2Upstream::send_reply(Downstream *downstream,
     downstream->reset_upstream_wtimer();
   }
 
-  return 0;
+  return {};
 }
 
 int Http2Upstream::error_reply(Downstream *downstream,
@@ -2018,7 +2019,11 @@ int Http2Upstream::redirect_to_https(Downstream *downstream) {
   resp.http_status = 308;
   resp.fs.add_header_token("location"sv, loc, false, http2::HD_LOCATION);
 
-  return send_reply(downstream, {});
+  if (!send_reply(downstream, {})) {
+    return -1;
+  }
+
+  return 0;
 }
 
 std::expected<void, Error> Http2Upstream::consume(int32_t stream_id,

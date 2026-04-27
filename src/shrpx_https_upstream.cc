@@ -972,8 +972,9 @@ HttpsUpstream::downstream_error(DownstreamConnection *dconn, int events) {
   return {};
 }
 
-int HttpsUpstream::send_reply(Downstream *downstream,
-                              std::span<const uint8_t> body) {
+std::expected<void, Error>
+HttpsUpstream::send_reply(Downstream *downstream,
+                          std::span<const uint8_t> body) {
   const auto &req = downstream->request();
   auto &resp = downstream->response();
   auto &balloc = downstream->get_block_allocator();
@@ -1045,7 +1046,7 @@ int HttpsUpstream::send_reply(Downstream *downstream,
 
   downstream->set_response_state(DownstreamState::MSG_COMPLETE);
 
-  return 0;
+  return {};
 }
 
 void HttpsUpstream::error_reply(unsigned int status_code) {
@@ -1448,7 +1449,11 @@ int HttpsUpstream::redirect_to_https(Downstream *downstream) {
   resp.fs.add_header_token("connection"sv, "close"sv, false,
                            http2::HD_CONNECTION);
 
-  return send_reply(downstream, {});
+  if (!send_reply(downstream, {})) {
+    return -1;
+  }
+
+  return 0;
 }
 
 void HttpsUpstream::log_response_headers(DefaultMemchunks *buf) const {
