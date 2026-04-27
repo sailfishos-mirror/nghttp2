@@ -108,6 +108,8 @@ enum class Error {
   DNS,
   // WebSocket handshake failure.
   WEBSOCKET_HANDSHAKE,
+  // PROXY-protocol error.
+  PROXY_PROTO,
 };
 
 } // namespace nghttp2
@@ -224,6 +226,9 @@ struct std::formatter<nghttp2::Error>
       break;
     case nghttp2::Error::WEBSOCKET_HANDSHAKE:
       s = "WebSocket handshake failure"sv;
+      break;
+    case nghttp2::Error::PROXY_PROTO:
+      s = "PROXY-protocol failure"sv;
       break;
     }
 

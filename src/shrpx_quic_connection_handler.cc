@@ -354,7 +354,7 @@ int QUICConnectionHandler::handle_packet(const UpstreamAddr *faddr,
     handler = (*it).second;
   }
 
-  if (handler->read_quic(faddr, remote_addr, local_addr, pi, data) != 0) {
+  if (!handler->read_quic(faddr, remote_addr, local_addr, pi, data)) {
     delete handler;
     return 0;
   }

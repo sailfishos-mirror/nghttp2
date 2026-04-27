@@ -73,41 +73,41 @@ public:
                 std::string_view port, int family, const UpstreamAddr *faddr);
   ~ClientHandler();
 
-  int noop();
+  std::expected<void, Error> noop() { return {}; }
   // Performs clear text I/O
-  int read_clear();
-  int write_clear();
+  std::expected<void, Error> read_clear();
+  std::expected<void, Error> write_clear();
   // Specialized for PROXY-protocol use; peek data from socket.
-  int proxy_protocol_peek_clear();
+  std::expected<void, Error> proxy_protocol_peek_clear();
   // Performs TLS handshake
-  int tls_handshake();
+  std::expected<void, Error> tls_handshake();
   // Performs TLS I/O
-  int read_tls();
-  int write_tls();
+  std::expected<void, Error> read_tls();
+  std::expected<void, Error> write_tls();
 
-  int upstream_noop();
-  int upstream_read();
-  int upstream_http2_connhd_read();
-  int upstream_http1_connhd_read();
-  int upstream_write();
+  std::expected<void, Error> upstream_noop() { return {}; }
+  std::expected<void, Error> upstream_read();
+  std::expected<void, Error> upstream_http2_connhd_read();
+  std::expected<void, Error> upstream_http1_connhd_read();
+  std::expected<void, Error> upstream_write();
 
-  int proxy_protocol_read();
-  int proxy_protocol_v2_read();
-  int on_proxy_protocol_finish();
+  std::expected<void, Error> proxy_protocol_read();
+  std::expected<void, Error> proxy_protocol_v2_read();
+  std::expected<void, Error> on_proxy_protocol_finish();
 
   // Performs I/O operation.  Internally calls on_read()/on_write().
-  int do_read();
-  int do_write();
+  std::expected<void, Error> do_read();
+  std::expected<void, Error> do_write();
 
   // Processes buffers.  No underlying I/O operation will be done.
-  int on_read();
-  int on_write();
+  std::expected<void, Error> on_read();
+  std::expected<void, Error> on_write();
 
   struct ev_loop *get_loop() const;
   void reset_upstream_read_timeout(ev_tstamp t);
   void reset_upstream_write_timeout(ev_tstamp t);
 
-  int validate_next_proto();
+  std::expected<void, Error> validate_next_proto();
   std::string_view get_ipaddr() const;
   bool get_should_close_after_write() const;
   void set_should_close_after_write(bool f);
@@ -125,10 +125,9 @@ public:
   // Call this function when HTTP/2 connection header is received at
   // the start of the connection.
   void direct_http2_upgrade();
-  // Performs HTTP/2 Upgrade from the connection managed by
-  // |http|. If this function fails, the connection must be
-  // terminated. This function returns 0 if it succeeds, or -1.
-  int perform_http2_upgrade(HttpsUpstream *http);
+  // Performs HTTP/2 Upgrade from the connection managed by |http|. If
+  // this function fails, the connection must be terminated.
+  std::expected<void, Error> perform_http2_upgrade(HttpsUpstream *http);
   bool get_http2_upgrade_allowed() const;
   // Returns upstream scheme, either "http" or "https"
   std::string_view get_upstream_scheme() const;
@@ -157,10 +156,12 @@ public:
 
 #ifdef ENABLE_HTTP3
   void setup_http3_upstream(std::unique_ptr<Http3Upstream> &&upstream);
-  int read_quic(const UpstreamAddr *faddr, const Address &remote_addr,
-                const Address &local_addr, const ngtcp2_pkt_info &pi,
-                std::span<const uint8_t> data);
-  int write_quic();
+  std::expected<void, Error> read_quic(const UpstreamAddr *faddr,
+                                       const Address &remote_addr,
+                                       const Address &local_addr,
+                                       const ngtcp2_pkt_info &pi,
+                                       std::span<const uint8_t> data);
+  std::expected<void, Error> write_quic();
 #endif // defined(ENABLE_HTTP3)
 
   // Returns string suitable for use in "by" parameter of Forwarded
@@ -230,8 +231,9 @@ private:
   // to client address migration, but this value stays the same for
   // now.
   std::string_view local_hostport_;
-  std::function<int(ClientHandler &)> read_, write_;
-  std::function<int(ClientHandler &)> on_read_, on_write_;
+  std::function<std::expected<void, Error>(ClientHandler &)> read_, write_;
+  std::function<std::expected<void, Error>(ClientHandler &)> on_read_,
+    on_write_;
   // Address of frontend listening socket
   const UpstreamAddr *faddr_;
   Worker *worker_;
