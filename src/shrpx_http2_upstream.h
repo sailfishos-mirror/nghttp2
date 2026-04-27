@@ -74,7 +74,8 @@ public:
   std::expected<void, Error> rst_stream(Downstream *downstream,
                                         uint32_t error_code);
   std::expected<void, Error> terminate_session(uint32_t error_code);
-  int error_reply(Downstream *downstream, unsigned int status_code);
+  std::expected<void, Error> error_reply(Downstream *downstream,
+                                         unsigned int status_code);
 
   void pause_read(IOCtrlReason reason) override;
   std::expected<void, Error> resume_read(IOCtrlReason reason,
@@ -140,7 +141,7 @@ public:
 
   size_t get_max_buffer_size() const;
 
-  int redirect_to_https(Downstream *downstream);
+  std::expected<void, Error> redirect_to_https(Downstream *downstream);
 
 private:
   DefaultMemchunks wb_;
