@@ -570,11 +570,11 @@ int recv_tx_key(ngtcp2_conn *conn, ngtcp2_encryption_level level,
 }
 } // namespace
 
-int Http3Upstream::init(const UpstreamAddr *faddr, const Address &remote_addr,
-                        const Address &local_addr,
-                        const ngtcp2_pkt_hd &initial_hd,
-                        const ngtcp2_cid *odcid, std::span<const uint8_t> token,
-                        ngtcp2_token_type token_type) {
+std::expected<void, Error>
+Http3Upstream::init(const UpstreamAddr *faddr, const Address &remote_addr,
+                    const Address &local_addr, const ngtcp2_pkt_hd &initial_hd,
+                    const ngtcp2_cid *odcid, std::span<const uint8_t> token,
+                    ngtcp2_token_type token_type) {
   int rv;
 
   auto worker = handler_->get_worker();
@@ -616,7 +616,7 @@ int Http3Upstream::init(const UpstreamAddr *faddr, const Address &remote_addr,
 
   if (generate_quic_connection_id(scid, worker->get_worker_id(), qkm.id,
                                   qkm.cid_encryption_ctx) != 0) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   ngtcp2_settings settings;
@@ -695,7 +695,7 @@ int Http3Upstream::init(const UpstreamAddr *faddr, const Address &remote_addr,
           handler_->get_ssl(), quic_early_data_ctx.data(),
           as_unsigned(quic_early_data_ctxlen)) != 1) {
       Log{ERROR, this} << "SSL_set_quic_early_data_context failed";
-      return -1;
+      return std::unexpected{Error::CRYPTO};
     }
   }
 #endif // defined(NGHTTP2_OPENSSL_IS_BORINGSSL)
@@ -714,7 +714,7 @@ int Http3Upstream::init(const UpstreamAddr *faddr, const Address &remote_addr,
     std::span{params.stateless_reset_token}, scid, qkm.secret);
   if (rv != 0) {
     Log{ERROR, this} << "generate_quic_stateless_reset_token failed";
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
   params.stateless_reset_token_present = 1;
 
@@ -729,7 +729,7 @@ int Http3Upstream::init(const UpstreamAddr *faddr, const Address &remote_addr,
                               &params, nullptr, this);
   if (rv != 0) {
     Log{ERROR, this} << "ngtcp2_conn_server_new: " << ngtcp2_strerror(rv);
-    return -1;
+    return std::unexpected{Error::QUIC};
   }
 
 #if OPENSSL_3_5_0_API
@@ -738,14 +738,14 @@ int Http3Upstream::init(const UpstreamAddr *faddr, const Address &remote_addr,
   rv = ngtcp2_crypto_ossl_configure_server_session(ssl);
   if (rv != 0) {
     Log{ERROR, this} << "ngtcp2_crypto_ossl_configure_server_session failed";
-    return -1;
+    return std::unexpected{Error::QUIC};
   }
 
   rv = ngtcp2_crypto_ossl_ctx_new(&ossl_ctx_, ssl);
   if (rv != 0) {
     Log{ERROR, this} << "ngtcp2_crypto_ossl_ctx_new failed with error code "
                      << rv;
-    return -1;
+    return std::unexpected{Error::QUIC};
   }
 
   ngtcp2_conn_set_tls_native_handle(conn_, ossl_ctx_);
@@ -757,13 +757,13 @@ int Http3Upstream::init(const UpstreamAddr *faddr, const Address &remote_addr,
 
   if (generate_quic_hashed_connection_id(hashed_scid_, remote_addr, local_addr,
                                          initial_hd.dcid) != 0) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   quic_connection_handler->add_connection_id(hashed_scid_, handler_);
   quic_connection_handler->add_connection_id(scid, handler_);
 
-  return 0;
+  return {};
 }
 
 std::expected<void, Error> Http3Upstream::on_write() {

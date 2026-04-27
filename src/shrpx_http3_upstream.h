@@ -107,10 +107,11 @@ public:
   bool push_enabled() const override;
   void cancel_premature_downstream(Downstream *promised_downstream) override;
 
-  int init(const UpstreamAddr *faddr, const Address &remote_addr,
-           const Address &local_addr, const ngtcp2_pkt_hd &initial_hd,
-           const ngtcp2_cid *odcid, std::span<const uint8_t> token,
-           ngtcp2_token_type token_type);
+  std::expected<void, Error>
+  init(const UpstreamAddr *faddr, const Address &remote_addr,
+       const Address &local_addr, const ngtcp2_pkt_hd &initial_hd,
+       const ngtcp2_cid *odcid, std::span<const uint8_t> token,
+       ngtcp2_token_type token_type);
 
   std::expected<void, Error> on_read(const UpstreamAddr *faddr,
                                      const Address &remote_addr,
