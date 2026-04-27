@@ -1150,8 +1150,8 @@ ClientHandler::perform_http2_upgrade(HttpsUpstream *http) {
   auto downstream = http->get_downstream();
   auto input = downstream->get_response_buf();
 
-  if (upstream->upgrade_upstream(http) != 0) {
-    return std::unexpected{Error::INTERNAL};
+  if (auto rv = upstream->upgrade_upstream(http); !rv) {
+    return rv;
   }
   // http pointer is now owned by upstream.
   upstream_.release();

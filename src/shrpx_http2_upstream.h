@@ -71,9 +71,11 @@ public:
   void add_pending_downstream(std::unique_ptr<Downstream> downstream);
   void remove_downstream(Downstream *downstream);
 
-  int rst_stream(Downstream *downstream, uint32_t error_code);
-  int terminate_session(uint32_t error_code);
-  int error_reply(Downstream *downstream, unsigned int status_code);
+  std::expected<void, Error> rst_stream(Downstream *downstream,
+                                        uint32_t error_code);
+  std::expected<void, Error> terminate_session(uint32_t error_code);
+  std::expected<void, Error> error_reply(Downstream *downstream,
+                                         unsigned int status_code);
 
   void pause_read(IOCtrlReason reason) override;
   std::expected<void, Error> resume_read(IOCtrlReason reason,
@@ -111,9 +113,8 @@ public:
 
   bool get_flow_control() const;
   // Perform HTTP/2 upgrade from |upstream|. On success, this object
-  // takes ownership of the |upstream|. This function returns 0 if it
-  // succeeds, or -1.
-  int upgrade_upstream(HttpsUpstream *upstream);
+  // takes ownership of the |upstream|.
+  std::expected<void, Error> upgrade_upstream(HttpsUpstream *upstream);
   void start_settings_timer();
   void stop_settings_timer();
   std::expected<void, Error> consume(int32_t stream_id, size_t len);
@@ -127,19 +128,22 @@ public:
   // Starts graceful shutdown period.
   void start_graceful_shutdown();
 
-  int prepare_push_promise(Downstream *downstream);
-  int submit_push_promise(std::string_view scheme, std::string_view authority,
-                          std::string_view path, Downstream *downstream);
+  std::expected<void, Error> prepare_push_promise(Downstream *downstream);
+  std::expected<void, Error> submit_push_promise(std::string_view scheme,
+                                                 std::string_view authority,
+                                                 std::string_view path,
+                                                 Downstream *downstream);
 
   // Called when new request has started.
   void on_start_request(const nghttp2_frame *frame);
-  int on_request_headers(Downstream *downstream, const nghttp2_frame *frame);
+  std::expected<void, Error> on_request_headers(Downstream *downstream,
+                                                const nghttp2_frame *frame);
 
   DefaultMemchunks *get_response_buf();
 
   size_t get_max_buffer_size() const;
 
-  int redirect_to_https(Downstream *downstream);
+  std::expected<void, Error> redirect_to_https(Downstream *downstream);
 
 private:
   DefaultMemchunks wb_;
