@@ -284,7 +284,7 @@ void Http2Session::disconnect(bool hard) {
 
     // Failure is allowed only for HTTP/1 upstream where upstream is
     // not shared by multiple Downstreams.
-    if (upstream->on_downstream_reset(downstream, hard) != 0) {
+    if (!upstream->on_downstream_reset(downstream, hard)) {
       delete upstream->get_client_handler();
     }
 
@@ -1069,8 +1069,6 @@ int on_begin_headers_callback(nghttp2_session *session,
 namespace {
 int on_response_headers(Http2Session *http2session, Downstream *downstream,
                         nghttp2_session *session, const nghttp2_frame *frame) {
-  int rv;
-
   auto upstream = downstream->get_upstream();
   auto handler = upstream->get_client_handler();
   const auto &req = downstream->request();
@@ -1117,11 +1115,9 @@ int on_response_headers(Http2Session *http2session, Downstream *downstream,
     }
 
     downstream->set_expect_final_response(true);
-    rv = upstream->on_downstream_header_complete(downstream);
-
-    // Now Dowstream's response headers are erased.
-
-    if (rv != 0) {
+    // After Upstream::on_downstream_header_complete, Dowstream's
+    // response headers are erased.
+    if (!upstream->on_downstream_header_complete(downstream)) {
       http2session->submit_rst_stream(frame->hd.stream_id,
                                       NGHTTP2_PROTOCOL_ERROR);
       downstream->set_response_state(DownstreamState::MSG_RESET);
@@ -1136,7 +1132,7 @@ int on_response_headers(Http2Session *http2session, Downstream *downstream,
   if (downstream->get_upgraded()) {
     resp.connection_close = true;
     // On upgrade success, both ends can send data
-    if (upstream->resume_read(SHRPX_NO_BUFFER, downstream, 0) != 0) {
+    if (!upstream->resume_read(SHRPX_NO_BUFFER, downstream, 0)) {
       // If resume_read fails, just drop connection. Not ideal.
       delete handler;
       return -1;
@@ -1180,8 +1176,7 @@ int on_response_headers(Http2Session *http2session, Downstream *downstream,
     downstream->set_accesslog_written(true);
   }
 
-  rv = upstream->on_downstream_header_complete(downstream);
-  if (rv != 0) {
+  if (!upstream->on_downstream_header_complete(downstream)) {
     // Handling early return (in other words, response was hijacked by
     // mruby scripting).
     if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
@@ -1224,9 +1219,7 @@ int on_frame_recv_callback(nghttp2_session *session, const nghttp2_frame *frame,
           DownstreamState::HEADER_COMPLETE) {
         downstream->set_response_state(DownstreamState::MSG_COMPLETE);
 
-        auto rv = upstream->on_downstream_body_complete(downstream);
-
-        if (rv != 0) {
+        if (!upstream->on_downstream_body_complete(downstream)) {
           downstream->set_response_state(DownstreamState::MSG_RESET);
         }
       }
@@ -1269,9 +1262,7 @@ int on_frame_recv_callback(nghttp2_session *session, const nghttp2_frame *frame,
 
         auto upstream = downstream->get_upstream();
 
-        rv = upstream->on_downstream_body_complete(downstream);
-
-        if (rv != 0) {
+        if (!upstream->on_downstream_body_complete(downstream)) {
           downstream->set_response_state(DownstreamState::MSG_RESET);
         }
       }
@@ -1515,7 +1506,7 @@ int on_frame_not_send_callback(nghttp2_session *session,
     // Migrate to another downstream connection.
     auto upstream = downstream->get_upstream();
 
-    if (upstream->on_downstream_reset(downstream, false)) {
+    if (!upstream->on_downstream_reset(downstream, false)) {
       // This should be done for h1 upstream only.  Deleting
       // ClientHandler for h2 upstream may lead to crash.
       delete upstream->get_client_handler();
@@ -1572,8 +1563,8 @@ int send_data_callback(nghttp2_session *session, nghttp2_frame *frame,
   if (length > 0) {
     // This is important because it will handle flow control
     // stuff.
-    if (downstream->get_upstream()->resume_read(SHRPX_NO_BUFFER, downstream,
-                                                length) != 0) {
+    if (!downstream->get_upstream()->resume_read(SHRPX_NO_BUFFER, downstream,
+                                                 length)) {
       // In this case, downstream may be deleted.
       return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
     }
@@ -2262,12 +2253,8 @@ Http2Session::handle_downstream_push_promise_complete(
   promised_downstream->set_request_state(DownstreamState::MSG_COMPLETE);
   promised_downstream->set_request_header_sent(true);
 
-  if (upstream->on_downstream_push_promise_complete(downstream,
-                                                    promised_downstream) != 0) {
-    return std::unexpected{Error::INTERNAL};
-  }
-
-  return {};
+  return upstream->on_downstream_push_promise_complete(downstream,
+                                                       promised_downstream);
 }
 
 size_t Http2Session::get_num_dconns() const { return dconns_.size(); }

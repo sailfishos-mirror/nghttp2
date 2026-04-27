@@ -149,7 +149,7 @@ int APIDownstreamConnection::send_reply(unsigned int http_status,
     break;
   }
 
-  if (upstream->send_reply(downstream_, buf) != 0) {
+  if (!upstream->send_reply(downstream_, buf)) {
     return -1;
   }
 

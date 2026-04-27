@@ -104,16 +104,11 @@ void retry_downstream_connection(Downstream *downstream,
     if (!maybe_dconn) {
       downstream->set_request_state(DownstreamState::CONNECT_FAIL);
 
-      int rv;
-
-      if (maybe_dconn.error() == Error::TLS_REQUIRED) {
-        rv =
-          upstream->on_downstream_abort_request_with_https_redirect(downstream);
-      } else {
-        rv = upstream->on_downstream_abort_request(downstream, status_code);
-      }
-
-      if (rv != 0) {
+      if (!(maybe_dconn.error() == Error::TLS_REQUIRED
+              ? upstream->on_downstream_abort_request_with_https_redirect(
+                  downstream)
+              : upstream->on_downstream_abort_request(downstream,
+                                                      status_code))) {
         delete handler;
       }
 
@@ -901,8 +896,6 @@ int htp_hdrs_completecb(llhttp_t *htp) {
   auto handler = upstream->get_client_handler();
   const auto &req = downstream->request();
   auto &resp = downstream->response();
-  int rv;
-
   auto &balloc = downstream->get_block_allocator();
 
   for (auto &kv : resp.fs.headers()) {
@@ -974,9 +967,7 @@ int htp_hdrs_completecb(llhttp_t *htp) {
     // For non-final response code, we just call
     // on_downstream_header_complete() without changing response
     // state.
-    rv = upstream->on_downstream_header_complete(downstream);
-
-    if (rv != 0) {
+    if (!upstream->on_downstream_header_complete(downstream)) {
       return -1;
     }
 
@@ -1017,13 +1008,13 @@ int htp_hdrs_completecb(llhttp_t *htp) {
     downstream->set_accesslog_written(true);
   }
 
-  if (upstream->on_downstream_header_complete(downstream) != 0) {
+  if (!upstream->on_downstream_header_complete(downstream)) {
     return -1;
   }
 
   if (downstream->get_upgraded()) {
     // Upgrade complete, read until EOF in both ends
-    if (upstream->resume_read(SHRPX_NO_BUFFER, downstream, 0) != 0) {
+    if (!upstream->resume_read(SHRPX_NO_BUFFER, downstream, 0)) {
       return -1;
     }
     downstream->set_request_state(DownstreamState::HEADER_COMPLETE);
@@ -1184,7 +1175,12 @@ int htp_msg_completecb(llhttp_t *htp) {
   // server. This callback is not called if the connection is
   // tunneled.
   downstream->pause_read(SHRPX_MSG_BLOCK);
-  return downstream->get_upstream()->on_downstream_body_complete(downstream);
+
+  if (!downstream->get_upstream()->on_downstream_body_complete(downstream)) {
+    return -1;
+  }
+
+  return 0;
 }
 } // namespace
 

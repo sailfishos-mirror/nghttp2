@@ -106,6 +106,8 @@ enum class Error {
   HTTP,
   // DNS related error.
   DNS,
+  // WebSocket handshake failure.
+  WEBSOCKET_HANDSHAKE,
 };
 
 } // namespace nghttp2
@@ -219,6 +221,9 @@ struct std::formatter<nghttp2::Error>
       break;
     case nghttp2::Error::DNS:
       s = "DNS failure"sv;
+      break;
+    case nghttp2::Error::WEBSOCKET_HANDSHAKE:
+      s = "WebSocket handshake failure"sv;
       break;
     }
 

@@ -342,14 +342,20 @@ int ClientHandler::read_quic(const UpstreamAddr *faddr,
   return upstream->on_read(faddr, remote_addr, local_addr, pi, data);
 }
 
-int ClientHandler::write_quic() { return upstream_->on_write(); }
+int ClientHandler::write_quic() {
+  if (!upstream_->on_write()) {
+    return -1;
+  }
+
+  return 0;
+}
 #endif // defined(ENABLE_HTTP3)
 
 int ClientHandler::upstream_noop() { return 0; }
 
 int ClientHandler::upstream_read() {
   assert(upstream_);
-  if (upstream_->on_read() != 0) {
+  if (!upstream_->on_read()) {
     return -1;
   }
   return 0;
@@ -357,7 +363,7 @@ int ClientHandler::upstream_read() {
 
 int ClientHandler::upstream_write() {
   assert(upstream_);
-  if (upstream_->on_write() != 0) {
+  if (!upstream_->on_write()) {
     return -1;
   }
 

@@ -50,12 +50,13 @@ public:
   Http3Upstream(ClientHandler *handler);
   ~Http3Upstream() override;
 
-  int on_read() override;
-  int on_write() override;
-  int on_timeout(Downstream *downstream) override;
-  int on_downstream_abort_request(Downstream *downstream,
-                                  unsigned int status_code) override;
-  int on_downstream_abort_request_with_https_redirect(
+  std::expected<void, Error> on_read() override { return {}; }
+  std::expected<void, Error> on_write() override;
+  std::expected<void, Error> on_timeout(Downstream *downstream) override;
+  std::expected<void, Error>
+  on_downstream_abort_request(Downstream *downstream,
+                              unsigned int status_code) override;
+  std::expected<void, Error> on_downstream_abort_request_with_https_redirect(
     Downstream *downstream) override;
   std::expected<void, Error>
   downstream_read(DownstreamConnection *dconn) override;
@@ -67,22 +68,29 @@ public:
                                               int events) override;
   ClientHandler *get_client_handler() const override;
 
-  int on_downstream_header_complete(Downstream *downstream) override;
+  std::expected<void, Error>
+  on_downstream_header_complete(Downstream *downstream) override;
   std::expected<void, Error> on_downstream_body(Downstream *downstream,
                                                 std::span<const uint8_t> data,
                                                 bool flush) override;
-  int on_downstream_body_complete(Downstream *downstream) override;
+  std::expected<void, Error>
+  on_downstream_body_complete(Downstream *downstream) override;
 
   void on_handler_delete() override;
-  int on_downstream_reset(Downstream *downstream, bool no_retry) override;
+  std::expected<void, Error> on_downstream_reset(Downstream *downstream,
+                                                 bool no_retry) override;
 
   void pause_read(IOCtrlReason reason) override;
-  int resume_read(IOCtrlReason reason, Downstream *downstream,
-                  size_t consumed) override;
-  int send_reply(Downstream *downstream,
-                 std::span<const uint8_t> body) override;
+  std::expected<void, Error> resume_read(IOCtrlReason reason,
+                                         Downstream *downstream,
+                                         size_t consumed) override;
+  std::expected<void, Error> send_reply(Downstream *downstream,
+                                        std::span<const uint8_t> body) override;
 
-  int initiate_push(Downstream *downstream, std::string_view uri) override;
+  std::expected<void, Error> initiate_push(Downstream *downstream,
+                                           std::string_view uri) override {
+    return {};
+  }
 
   std::span<struct iovec>
   response_riovec(std::span<struct iovec> iov) const override;
@@ -92,8 +100,10 @@ public:
 
   Downstream *on_downstream_push_promise(Downstream *downstream,
                                          int32_t promised_stream_id) override;
-  int on_downstream_push_promise_complete(
-    Downstream *downstream, Downstream *promised_downstream) override;
+  std::expected<void, Error> on_downstream_push_promise_complete(
+    Downstream *downstream, Downstream *promised_downstream) override {
+    return {};
+  }
   bool push_enabled() const override;
   void cancel_premature_downstream(Downstream *promised_downstream) override;
 
@@ -162,7 +172,7 @@ public:
 
   void on_send_blocked(const ngtcp2_path &path, const ngtcp2_pkt_info &pi,
                        std::span<const uint8_t> data, size_t gso_size);
-  int send_blocked_packet();
+  void send_blocked_packet();
   void signal_write_upstream_addr(const UpstreamAddr *faddr);
 
   ngtcp2_conn *get_conn() const;

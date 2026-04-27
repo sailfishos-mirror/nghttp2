@@ -623,20 +623,20 @@ int htp_msg_completecb(llhttp_t *htp) {
 
 // on_read() does not consume all available data in input buffer if
 // one http request is fully received.
-int HttpsUpstream::on_read() {
+std::expected<void, Error> HttpsUpstream::on_read() {
   auto rb = handler_->get_rb();
   auto rlimit = handler_->get_rlimit();
   auto downstream = get_downstream();
 
   if (rb->rleft() == 0 || handler_->get_should_close_after_write()) {
-    return 0;
+    return {};
   }
 
   // downstream can be nullptr here, because it is initialized in the
   // callback chain called by llhttp_execute()
   if (downstream && downstream->get_upgraded()) {
-    if (!downstream->push_upload_data_chunk(rb->peek())) {
-      return -1;
+    if (auto rv = downstream->push_upload_data_chunk(rb->peek()); !rv) {
+      return rv;
     }
 
     rb->reset();
@@ -648,10 +648,10 @@ int HttpsUpstream::on_read() {
       }
       pause_read(SHRPX_NO_BUFFER);
 
-      return 0;
+      return {};
     }
 
-    return 0;
+    return {};
   }
 
   if (downstream) {
@@ -661,7 +661,7 @@ int HttpsUpstream::on_read() {
     case DownstreamState::HEADER_COMPLETE:
       break;
     default:
-      return 0;
+      return {};
     }
   }
 
@@ -700,7 +700,7 @@ int HttpsUpstream::on_read() {
         downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
       handler_->signal_write();
     }
-    return 0;
+    return {};
   }
 
   if (htperr != HPE_OK) {
@@ -714,7 +714,7 @@ int HttpsUpstream::on_read() {
         downstream->get_response_state() != DownstreamState::INITIAL) {
       handler_->set_should_close_after_write(true);
       handler_->signal_write();
-      return 0;
+      return {};
     }
 
     unsigned int status_code;
@@ -741,7 +741,7 @@ int HttpsUpstream::on_read() {
 
     handler_->signal_write();
 
-    return 0;
+    return {};
   }
 
   // downstream can be NULL here.
@@ -752,23 +752,23 @@ int HttpsUpstream::on_read() {
 
     pause_read(SHRPX_NO_BUFFER);
 
-    return 0;
+    return {};
   }
 
-  return 0;
+  return {};
 }
 
-int HttpsUpstream::on_write() {
+std::expected<void, Error> HttpsUpstream::on_write() {
   auto downstream = get_downstream();
   if (!downstream) {
-    return 0;
+    return {};
   }
 
   auto output = downstream->get_response_buf();
   const auto &resp = downstream->response();
 
   if (output->rleft() > 0) {
-    return 0;
+    return {};
   }
 
   // We need to postpone detachment until all data are sent so that
@@ -787,7 +787,7 @@ int HttpsUpstream::on_write() {
       delete_downstream();
 
       if (handler_->get_should_close_after_write()) {
-        return 0;
+        return {};
       }
 
       auto &upstreamconf = get_config()->conn.upstream;
@@ -801,15 +801,17 @@ int HttpsUpstream::on_write() {
 
       handler_->set_should_close_after_write(true);
 
-      return 0;
+      return {};
     }
   }
 
-  if (!downstream->resume_read(SHRPX_NO_BUFFER, resp.unconsumed_body_length)) {
-    return -1;
+  if (auto rv =
+        downstream->resume_read(SHRPX_NO_BUFFER, resp.unconsumed_body_length);
+      !rv) {
+    return rv;
   }
 
-  return 0;
+  return {};
 }
 
 ClientHandler *HttpsUpstream::get_client_handler() const { return handler_; }
@@ -818,11 +820,12 @@ void HttpsUpstream::pause_read(IOCtrlReason reason) {
   ioctrl_.pause_read(reason);
 }
 
-int HttpsUpstream::resume_read(IOCtrlReason reason, Downstream *downstream,
-                               size_t consumed) {
+std::expected<void, Error> HttpsUpstream::resume_read(IOCtrlReason reason,
+                                                      Downstream *downstream,
+                                                      size_t consumed) {
   // downstream could be nullptr
   if (downstream && downstream->request_buf_full()) {
-    return 0;
+    return {};
   }
   if (ioctrl_.resume_read(reason)) {
     // Process remaining data in input buffer here because these bytes
@@ -831,10 +834,10 @@ int HttpsUpstream::resume_read(IOCtrlReason reason, Downstream *downstream,
 
     auto conn = handler_->get_connection();
     ev_feed_event(conn->loop, &conn->rev, EV_READ);
-    return 0;
+    return {};
   }
 
-  return 0;
+  return {};
 }
 
 std::expected<void, Error>
@@ -969,8 +972,9 @@ HttpsUpstream::downstream_error(DownstreamConnection *dconn, int events) {
   return {};
 }
 
-int HttpsUpstream::send_reply(Downstream *downstream,
-                              std::span<const uint8_t> body) {
+std::expected<void, Error>
+HttpsUpstream::send_reply(Downstream *downstream,
+                          std::span<const uint8_t> body) {
   const auto &req = downstream->request();
   auto &resp = downstream->response();
   auto &balloc = downstream->get_block_allocator();
@@ -1042,7 +1046,7 @@ int HttpsUpstream::send_reply(Downstream *downstream,
 
   downstream->set_response_state(DownstreamState::MSG_COMPLETE);
 
-  return 0;
+  return {};
 }
 
 void HttpsUpstream::error_reply(unsigned int status_code) {
@@ -1113,7 +1117,8 @@ std::unique_ptr<Downstream> HttpsUpstream::pop_downstream() {
   return std::unique_ptr<Downstream>(downstream_.release());
 }
 
-int HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
+std::expected<void, Error>
+HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
   if (log_enabled(INFO)) {
     if (downstream->get_non_final_response()) {
       Log{INFO, downstream} << "HTTP non-final response header";
@@ -1131,7 +1136,7 @@ int HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
   if (downstream->get_non_final_response() &&
       !downstream->supports_non_final_response()) {
     resp.fs.clear_headers();
-    return 0;
+    return {};
   }
 
 #ifdef HAVE_MRUBY
@@ -1143,11 +1148,11 @@ int HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
 
       if (dmruby_ctx->run_on_response_proc(downstream) != 0) {
         error_reply(500);
-        return -1;
+        return std::unexpected{Error::INTERNAL};
       }
 
       if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
-        return -1;
+        return std::unexpected{Error::INTERNAL};
       }
     }
 
@@ -1156,11 +1161,11 @@ int HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
 
     if (mruby_ctx->run_on_response_proc(downstream) != 0) {
       error_reply(500);
-      return -1;
+      return std::unexpected{Error::INTERNAL};
     }
 
     if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
-      return -1;
+      return std::unexpected{Error::INTERNAL};
     }
   }
 #endif // defined(HAVE_MRUBY)
@@ -1202,7 +1207,7 @@ int HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
 
     resp.fs.clear_headers();
 
-    return 0;
+    return {};
   }
 
   auto build_flags =
@@ -1240,12 +1245,12 @@ int HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
       buf->append("Upgrade: websocket\r\nConnection: Upgrade\r\n"sv);
       auto key = req.fs.header(http2::HD_SEC_WEBSOCKET_KEY);
       if (!key || key->value.size() != base64::encode_length(16)) {
-        return -1;
+        return std::unexpected{Error::WEBSOCKET_HANDSHAKE};
       }
       std::array<uint8_t, base64::encode_length(20)> out;
       auto accept = http2::make_websocket_accept_token(out.data(), key->value);
       if (accept.empty()) {
-        return -1;
+        return std::unexpected{Error::WEBSOCKET_HANDSHAKE};
       }
       buf->append("Sec-WebSocket-Accept: "sv);
       buf->append(accept);
@@ -1337,7 +1342,7 @@ int HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
     log_response_headers(buf);
   }
 
-  return 0;
+  return {};
 }
 
 std::expected<void, Error>
@@ -1362,7 +1367,8 @@ HttpsUpstream::on_downstream_body(Downstream *downstream,
   return {};
 }
 
-int HttpsUpstream::on_downstream_body_complete(Downstream *downstream) {
+std::expected<void, Error>
+HttpsUpstream::on_downstream_body_complete(Downstream *downstream) {
   const auto &req = downstream->request();
   auto &resp = downstream->response();
 
@@ -1392,21 +1398,23 @@ int HttpsUpstream::on_downstream_body_complete(Downstream *downstream) {
     auto handler = get_client_handler();
     handler->set_should_close_after_write(true);
   }
-  return 0;
+  return {};
 }
 
-int HttpsUpstream::on_downstream_abort_request(Downstream *downstream,
-                                               unsigned int status_code) {
+std::expected<void, Error>
+HttpsUpstream::on_downstream_abort_request(Downstream *downstream,
+                                           unsigned int status_code) {
   error_reply(status_code);
   handler_->signal_write();
-  return 0;
+  return {};
 }
 
-int HttpsUpstream::on_downstream_abort_request_with_https_redirect(
+std::expected<void, Error>
+HttpsUpstream::on_downstream_abort_request_with_https_redirect(
   Downstream *downstream) {
   redirect_to_https(downstream);
   handler_->signal_write();
-  return 0;
+  return {};
 }
 
 int HttpsUpstream::redirect_to_https(Downstream *downstream) {
@@ -1441,7 +1449,11 @@ int HttpsUpstream::redirect_to_https(Downstream *downstream) {
   resp.fs.add_header_token("connection"sv, "close"sv, false,
                            http2::HD_CONNECTION);
 
-  return send_reply(downstream, {});
+  if (!send_reply(downstream, {})) {
+    return -1;
+  }
+
+  return 0;
 }
 
 void HttpsUpstream::log_response_headers(DefaultMemchunks *buf) const {
@@ -1461,7 +1473,8 @@ void HttpsUpstream::on_handler_delete() {
   }
 }
 
-int HttpsUpstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
+std::expected<void, Error>
+HttpsUpstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
   std::unique_ptr<DownstreamConnection> dconn;
 
   assert(downstream == downstream_.get());
@@ -1472,17 +1485,17 @@ int HttpsUpstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
     switch (downstream_->get_response_state()) {
     case DownstreamState::MSG_COMPLETE:
       // We have got all response body already.  Send it off.
-      return 0;
+      return {};
     case DownstreamState::INITIAL:
-      if (on_downstream_abort_request(downstream_.get(), 502) != 0) {
-        return -1;
+      if (auto rv = on_downstream_abort_request(downstream_.get(), 502); !rv) {
+        return rv;
       }
-      return 0;
+      return {};
     default:
       break;
     }
     // Return error so that caller can delete handler
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   downstream_->add_retry();
@@ -1510,26 +1523,18 @@ int HttpsUpstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
     goto fail;
   }
 
-  return 0;
+  return {};
 
 fail:
-  int rv;
-
-  if (err == Error::TLS_REQUIRED) {
-    rv = on_downstream_abort_request_with_https_redirect(downstream);
-  } else {
-    rv = on_downstream_abort_request(downstream_.get(), 502);
-  }
-  if (rv != 0) {
-    return -1;
+  if (auto rv = err == Error::TLS_REQUIRED
+                  ? on_downstream_abort_request_with_https_redirect(downstream)
+                  : on_downstream_abort_request(downstream_.get(), 502);
+      !rv) {
+    return rv;
   }
   downstream_->pop_downstream_connection();
 
-  return 0;
-}
-
-int HttpsUpstream::initiate_push(Downstream *downstream, std::string_view uri) {
-  return 0;
+  return {};
 }
 
 std::span<struct iovec>
@@ -1577,11 +1582,6 @@ Downstream *
 HttpsUpstream::on_downstream_push_promise(Downstream *downstream,
                                           int32_t promised_stream_id) {
   return nullptr;
-}
-
-int HttpsUpstream::on_downstream_push_promise_complete(
-  Downstream *downstream, Downstream *promised_downstream) {
-  return -1;
 }
 
 bool HttpsUpstream::push_enabled() const { return false; }

@@ -766,35 +766,28 @@ int Http3Upstream::init(const UpstreamAddr *faddr, const Address &remote_addr,
   return 0;
 }
 
-int Http3Upstream::on_read() { return 0; }
-
-int Http3Upstream::on_write() {
-  int rv;
-
+std::expected<void, Error> Http3Upstream::on_write() {
   if (tx_.send_blocked) {
-    rv = send_blocked_packet();
-    if (rv != 0) {
-      return -1;
-    }
+    send_blocked_packet();
 
     if (tx_.send_blocked) {
-      return 0;
+      return {};
     }
   }
 
   handler_->get_connection()->wlimit.stopw();
 
   if (write_streams() != 0) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   if (httpconn_ && nghttp3_conn_is_drained(httpconn_)) {
-    return -1;
+    return std::unexpected{Error::DONE};
   }
 
   reset_timer();
 
-  return 0;
+  return {};
 }
 
 namespace {
@@ -937,7 +930,7 @@ void Http3Upstream::send_packet(const ngtcp2_path &path,
   }
 }
 
-int Http3Upstream::on_timeout(Downstream *downstream) {
+std::expected<void, Error> Http3Upstream::on_timeout(Downstream *downstream) {
   if (log_enabled(INFO)) {
     Log{INFO, this} << "Stream timeout stream_id="
                     << downstream->get_stream_id();
@@ -947,25 +940,27 @@ int Http3Upstream::on_timeout(Downstream *downstream) {
 
   handler_->signal_write();
 
-  return 0;
+  return {};
 }
 
-int Http3Upstream::on_downstream_abort_request(Downstream *downstream,
-                                               unsigned int status_code) {
+std::expected<void, Error>
+Http3Upstream::on_downstream_abort_request(Downstream *downstream,
+                                           unsigned int status_code) {
   int rv;
 
   rv = error_reply(downstream, status_code);
 
   if (rv != 0) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   handler_->signal_write();
 
-  return 0;
+  return {};
 }
 
-int Http3Upstream::on_downstream_abort_request_with_https_redirect(
+std::expected<void, Error>
+Http3Upstream::on_downstream_abort_request_with_https_redirect(
   Downstream *downstream) {
   assert(0);
   abort();
@@ -1084,8 +1079,8 @@ Http3Upstream::downstream_eof(DownstreamConnection *dconn) {
     // downstream_read_data_callback to send RST_STREAM after pending
     // response body is sent. This is needed to ensure that RST_STREAM
     // is sent after all pending data are sent.
-    if (on_downstream_body_complete(downstream) != 0) {
-      return std::unexpected{Error::INTERNAL};
+    if (auto rv = on_downstream_body_complete(downstream); !rv) {
+      return rv;
     }
   } else if (downstream->get_response_state() !=
              DownstreamState::MSG_COMPLETE) {
@@ -1131,8 +1126,8 @@ Http3Upstream::downstream_error(DownstreamConnection *dconn, int events) {
   } else {
     if (downstream->get_response_state() == DownstreamState::HEADER_COMPLETE) {
       if (downstream->get_upgraded()) {
-        if (on_downstream_body_complete(downstream) != 0) {
-          return std::unexpected{Error::INTERNAL};
+        if (auto rv = on_downstream_body_complete(downstream); !rv) {
+          return rv;
         }
       } else {
         shutdown_stream(downstream, NGHTTP3_H3_INTERNAL_ERROR);
@@ -1204,7 +1199,8 @@ nghttp3_ssize downstream_read_data_callback(nghttp3_conn *conn,
 }
 } // namespace
 
-int Http3Upstream::on_downstream_header_complete(Downstream *downstream) {
+std::expected<void, Error>
+Http3Upstream::on_downstream_header_complete(Downstream *downstream) {
   int rv;
 
   const auto &req = downstream->request();
@@ -1236,14 +1232,14 @@ int Http3Upstream::on_downstream_header_complete(Downstream *downstream) {
 
       if (dmruby_ctx->run_on_response_proc(downstream) != 0) {
         if (error_reply(downstream, 500) != 0) {
-          return -1;
+          return std::unexpected{Error::INTERNAL};
         }
-        // Returning -1 will signal deletion of dconn.
-        return -1;
+        // Returning an error will signal deletion of dconn.
+        return std::unexpected{Error::INTERNAL};
       }
 
       if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
-        return -1;
+        return std::unexpected{Error::INTERNAL};
       }
     }
 
@@ -1252,14 +1248,14 @@ int Http3Upstream::on_downstream_header_complete(Downstream *downstream) {
 
     if (mruby_ctx->run_on_response_proc(downstream) != 0) {
       if (error_reply(downstream, 500) != 0) {
-        return -1;
+        return std::unexpected{Error::INTERNAL};
       }
-      // Returning -1 will signal deletion of dconn.
-      return -1;
+      // Returning an error will signal deletion of dconn.
+      return std::unexpected{Error::INTERNAL};
     }
 
     if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
-      return -1;
+      return std::unexpected{Error::INTERNAL};
     }
   }
 #endif // defined(HAVE_MRUBY)
@@ -1289,10 +1285,10 @@ int Http3Upstream::on_downstream_header_complete(Downstream *downstream) {
 
     if (rv != 0) {
       Log{FATAL, this} << "nghttp3_conn_submit_info() failed";
-      return -1;
+      return std::unexpected{Error::HTTP3};
     }
 
-    return 0;
+    return {};
   }
 
   auto striphd_flags =
@@ -1404,17 +1400,17 @@ int Http3Upstream::on_downstream_header_complete(Downstream *downstream) {
                                     nva.data(), nva.size(), data_readptr);
   if (rv != 0) {
     Log{FATAL, this} << "nghttp3_conn_submit_response() failed";
-    return -1;
+    return std::unexpected{Error::HTTP3};
   }
 
   if (data_readptr) {
     downstream->reset_upstream_wtimer();
   } else if (shutdown_stream_read(downstream->get_stream_id(),
                                   NGHTTP3_H3_NO_ERROR) != 0) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
-  return 0;
+  return {};
 }
 
 std::expected<void, Error>
@@ -1432,7 +1428,8 @@ Http3Upstream::on_downstream_body(Downstream *downstream,
   return {};
 }
 
-int Http3Upstream::on_downstream_body_complete(Downstream *downstream) {
+std::expected<void, Error>
+Http3Upstream::on_downstream_body_complete(Downstream *downstream) {
   if (log_enabled(INFO)) {
     Log{INFO, downstream} << "HTTP response completed";
   }
@@ -1442,7 +1439,7 @@ int Http3Upstream::on_downstream_body_complete(Downstream *downstream) {
   if (!downstream->validate_response_recv_body_length()) {
     shutdown_stream(downstream, NGHTTP3_H3_GENERAL_PROTOCOL_ERROR);
     resp.connection_close = true;
-    return 0;
+    return {};
   }
 
   if (!downstream->get_upgraded()) {
@@ -1457,7 +1454,7 @@ int Http3Upstream::on_downstream_body_complete(Downstream *downstream) {
         if (rv != 0) {
           Log{FATAL, this} << "nghttp3_conn_submit_trailers() failed: "
                            << nghttp3_strerror(rv);
-          return -1;
+          return std::unexpected{Error::HTTP3};
         }
       }
     }
@@ -1466,7 +1463,7 @@ int Http3Upstream::on_downstream_body_complete(Downstream *downstream) {
   nghttp3_conn_resume_stream(httpconn_, downstream->get_stream_id());
   downstream->ensure_upstream_wtimer();
 
-  return 0;
+  return {};
 }
 
 void Http3Upstream::on_handler_delete() {
@@ -1526,7 +1523,8 @@ void Http3Upstream::on_handler_delete() {
   quic_conn_handler->add_close_wait(cw.release());
 }
 
-int Http3Upstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
+std::expected<void, Error>
+Http3Upstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
   if (downstream->get_dispatch_state() != DispatchState::ACTIVE) {
     // This is error condition when we failed push_request_headers()
     // in initiate_downstream().  Otherwise, we have
@@ -1535,14 +1533,14 @@ int Http3Upstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
     downstream->pop_downstream_connection();
     handler_->signal_write();
 
-    return 0;
+    return {};
   }
 
   if (!downstream->request_submission_ready()) {
     if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
       // We have got all response body already.  Send it off.
       downstream->pop_downstream_connection();
-      return 0;
+      return {};
     }
     // pushed stream is handled here
     shutdown_stream(downstream, NGHTTP3_H3_INTERNAL_ERROR);
@@ -1550,7 +1548,7 @@ int Http3Upstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
 
     handler_->signal_write();
 
-    return 0;
+    return {};
   }
 
   downstream->pop_downstream_connection();
@@ -1585,7 +1583,7 @@ int Http3Upstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
     goto fail;
   }
 
-  return 0;
+  return {};
 
 fail:
   if (err == Error::TLS_REQUIRED) {
@@ -1593,20 +1591,21 @@ fail:
     abort();
   }
 
-  if (on_downstream_abort_request(downstream, 502) != 0) {
+  if (!on_downstream_abort_request(downstream, 502)) {
     shutdown_stream(downstream, NGHTTP3_H3_INTERNAL_ERROR);
   }
   downstream->pop_downstream_connection();
 
   handler_->signal_write();
 
-  return 0;
+  return {};
 }
 
 void Http3Upstream::pause_read(IOCtrlReason reason) {}
 
-int Http3Upstream::resume_read(IOCtrlReason reason, Downstream *downstream,
-                               size_t consumed) {
+std::expected<void, Error> Http3Upstream::resume_read(IOCtrlReason reason,
+                                                      Downstream *downstream,
+                                                      size_t consumed) {
   consume(downstream->get_stream_id(), consumed);
 
   auto &req = downstream->request();
@@ -1615,11 +1614,12 @@ int Http3Upstream::resume_read(IOCtrlReason reason, Downstream *downstream,
 
   handler_->signal_write();
 
-  return 0;
+  return {};
 }
 
-int Http3Upstream::send_reply(Downstream *downstream,
-                              std::span<const uint8_t> body) {
+std::expected<void, Error>
+Http3Upstream::send_reply(Downstream *downstream,
+                          std::span<const uint8_t> body) {
   int rv;
 
   nghttp3_data_reader data_read, *data_read_ptr = nullptr;
@@ -1680,7 +1680,7 @@ int Http3Upstream::send_reply(Downstream *downstream,
   if (nghttp3_err_is_fatal(rv)) {
     Log{FATAL, this} << "nghttp3_conn_submit_response() failed: "
                      << nghttp3_strerror(rv);
-    return -1;
+    return std::unexpected{Error::HTTP3};
   }
 
   downstream->set_response_state(DownstreamState::MSG_COMPLETE);
@@ -1691,14 +1691,10 @@ int Http3Upstream::send_reply(Downstream *downstream,
 
   if (shutdown_stream_read(downstream->get_stream_id(), NGHTTP3_H3_NO_ERROR) !=
       0) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
-  return 0;
-}
-
-int Http3Upstream::initiate_push(Downstream *downstream, std::string_view uri) {
-  return 0;
+  return {};
 }
 
 std::span<struct iovec>
@@ -1716,11 +1712,6 @@ Downstream *
 Http3Upstream::on_downstream_push_promise(Downstream *downstream,
                                           int32_t promised_stream_id) {
   return nullptr;
-}
-
-int Http3Upstream::on_downstream_push_promise_complete(
-  Downstream *downstream, Downstream *promised_downstream) {
-  return 0;
 }
 
 bool Http3Upstream::push_enabled() const { return false; }
@@ -1878,7 +1869,7 @@ void Http3Upstream::on_send_blocked(const ngtcp2_path &path,
   p.gso_size = gso_size;
 }
 
-int Http3Upstream::send_blocked_packet() {
+void Http3Upstream::send_blocked_packet() {
   assert(tx_.send_blocked);
 
   auto &p = tx_.blocked;
@@ -1891,12 +1882,10 @@ int Http3Upstream::send_blocked_packet() {
 
     signal_write_upstream_addr(p.faddr);
 
-    return 0;
+    return;
   }
 
   tx_.send_blocked = false;
-
-  return 0;
 }
 
 void Http3Upstream::signal_write_upstream_addr(const UpstreamAddr *faddr) {

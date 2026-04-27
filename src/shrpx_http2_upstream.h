@@ -49,12 +49,13 @@ class Http2Upstream : public Upstream {
 public:
   Http2Upstream(ClientHandler *handler);
   ~Http2Upstream() override;
-  int on_read() override;
-  int on_write() override;
-  int on_timeout(Downstream *downstream) override;
-  int on_downstream_abort_request(Downstream *downstream,
-                                  unsigned int status_code) override;
-  int on_downstream_abort_request_with_https_redirect(
+  std::expected<void, Error> on_read() override;
+  std::expected<void, Error> on_write() override;
+  std::expected<void, Error> on_timeout(Downstream *downstream) override;
+  std::expected<void, Error>
+  on_downstream_abort_request(Downstream *downstream,
+                              unsigned int status_code) override;
+  std::expected<void, Error> on_downstream_abort_request_with_https_redirect(
     Downstream *downstream) override;
   ClientHandler *get_client_handler() const override;
 
@@ -75,20 +76,25 @@ public:
   int error_reply(Downstream *downstream, unsigned int status_code);
 
   void pause_read(IOCtrlReason reason) override;
-  int resume_read(IOCtrlReason reason, Downstream *downstream,
-                  size_t consumed) override;
+  std::expected<void, Error> resume_read(IOCtrlReason reason,
+                                         Downstream *downstream,
+                                         size_t consumed) override;
 
-  int on_downstream_header_complete(Downstream *downstream) override;
+  std::expected<void, Error>
+  on_downstream_header_complete(Downstream *downstream) override;
   std::expected<void, Error> on_downstream_body(Downstream *downstream,
                                                 std::span<const uint8_t> data,
                                                 bool flush) override;
-  int on_downstream_body_complete(Downstream *downstream) override;
+  std::expected<void, Error>
+  on_downstream_body_complete(Downstream *downstream) override;
 
   void on_handler_delete() override;
-  int on_downstream_reset(Downstream *downstream, bool no_retry) override;
-  int send_reply(Downstream *downstream,
-                 std::span<const uint8_t> body) override;
-  int initiate_push(Downstream *downstream, std::string_view uri) override;
+  std::expected<void, Error> on_downstream_reset(Downstream *downstream,
+                                                 bool no_retry) override;
+  std::expected<void, Error> send_reply(Downstream *downstream,
+                                        std::span<const uint8_t> body) override;
+  std::expected<void, Error> initiate_push(Downstream *downstream,
+                                           std::string_view uri) override;
   std::span<struct iovec>
   response_riovec(std::span<struct iovec> iov) const override;
   std::span<const uint8_t> response_peek() const override;
@@ -97,8 +103,9 @@ public:
 
   Downstream *on_downstream_push_promise(Downstream *downstream,
                                          int32_t promised_stream_id) override;
-  int on_downstream_push_promise_complete(
-    Downstream *downstream, Downstream *promised_downstream) override;
+  std::expected<void, Error>
+  on_downstream_push_promise_complete(Downstream *downstream,
+                                      Downstream *promised_downstream) override;
   bool push_enabled() const override;
   void cancel_premature_downstream(Downstream *promised_downstream) override;
 
@@ -109,7 +116,7 @@ public:
   int upgrade_upstream(HttpsUpstream *upstream);
   void start_settings_timer();
   void stop_settings_timer();
-  int consume(int32_t stream_id, size_t len);
+  std::expected<void, Error> consume(int32_t stream_id, size_t len);
   void log_response_headers(Downstream *downstream,
                             const std::vector<nghttp2_nv> &nva) const;
   void start_downstream(Downstream *downstream);
