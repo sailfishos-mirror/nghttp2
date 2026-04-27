@@ -93,7 +93,8 @@ public:
                                                  bool no_retry) override;
   std::expected<void, Error> send_reply(Downstream *downstream,
                                         std::span<const uint8_t> body) override;
-  int initiate_push(Downstream *downstream, std::string_view uri) override;
+  std::expected<void, Error> initiate_push(Downstream *downstream,
+                                           std::string_view uri) override;
   std::span<struct iovec>
   response_riovec(std::span<struct iovec> iov) const override;
   std::span<const uint8_t> response_peek() const override;

@@ -2287,26 +2287,27 @@ bool Http2Upstream::push_enabled() const {
            config->http2_proxy);
 }
 
-int Http2Upstream::initiate_push(Downstream *downstream, std::string_view uri) {
+std::expected<void, Error> Http2Upstream::initiate_push(Downstream *downstream,
+                                                        std::string_view uri) {
   int rv;
 
   if (uri.empty() || !push_enabled() ||
       (downstream->get_stream_id() % 2) == 0) {
-    return 0;
+    return {};
   }
 
   const auto &req = downstream->request();
 
   auto base = http2::get_pure_path_component(req.path);
   if (base.empty()) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   auto &balloc = downstream->get_block_allocator();
 
   auto maybe_push_comp = http2::construct_push_component(balloc, base, uri);
   if (!maybe_push_comp) {
-    return -1;
+    return std::unexpected{maybe_push_comp.error()};
   }
 
   auto push_comp = *maybe_push_comp;
@@ -2323,19 +2324,19 @@ int Http2Upstream::initiate_push(Downstream *downstream, std::string_view uri) {
 
   if (resp.is_resource_pushed(push_comp.scheme, push_comp.authority,
                               push_comp.path)) {
-    return 0;
+    return {};
   }
 
   rv = submit_push_promise(push_comp.scheme, push_comp.authority,
                            push_comp.path, downstream);
 
   if (rv != 0) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   resp.resource_pushed(push_comp.scheme, push_comp.authority, push_comp.path);
 
-  return 0;
+  return {};
 }
 
 std::span<struct iovec>

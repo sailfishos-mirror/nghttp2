@@ -89,9 +89,9 @@ public:
   send_reply(Downstream *downstream, std::span<const uint8_t> body) = 0;
 
   // Starts server push.  The |downstream| is an associated stream for
-  // the pushed resource.  This function returns 0 if it succeeds,
-  // otherwise -1.
-  virtual int initiate_push(Downstream *downstream, std::string_view uri) = 0;
+  // the pushed resource.
+  virtual std::expected<void, Error> initiate_push(Downstream *downstream,
+                                                   std::string_view uri) = 0;
 
   // Fills response data in |iov| whose capacity is |iovcnt|.  Returns
   // the number of iovs filled.

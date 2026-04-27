@@ -1537,10 +1537,6 @@ fail:
   return {};
 }
 
-int HttpsUpstream::initiate_push(Downstream *downstream, std::string_view uri) {
-  return 0;
-}
-
 std::span<struct iovec>
 HttpsUpstream::response_riovec(std::span<struct iovec> iov) const {
   if (!downstream_) {

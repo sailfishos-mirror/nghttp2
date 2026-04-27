@@ -1697,10 +1697,6 @@ Http3Upstream::send_reply(Downstream *downstream,
   return {};
 }
 
-int Http3Upstream::initiate_push(Downstream *downstream, std::string_view uri) {
-  return 0;
-}
-
 std::span<struct iovec>
 Http3Upstream::response_riovec(std::span<struct iovec> iov) const {
   return {};
