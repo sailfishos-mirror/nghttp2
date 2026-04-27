@@ -1112,7 +1112,7 @@ Http2Upstream::~Http2Upstream() {
   ev_timer_stop(handler_->get_loop(), &settings_timer_);
 }
 
-int Http2Upstream::on_read() {
+std::expected<void, Error> Http2Upstream::on_read() {
   auto rb = handler_->get_rb();
   auto rlimit = handler_->get_rlimit();
 
@@ -1123,7 +1123,7 @@ int Http2Upstream::on_read() {
         Log{ERROR, this} << "nghttp2_session_mem_recv2() returned error: "
                          << nghttp2_strerror(static_cast<int>(rv));
       }
-      return -1;
+      return std::unexpected{Error::HTTP2};
     }
 
     // nghttp2_session_mem_recv2 should consume all input bytes on
@@ -1138,15 +1138,15 @@ int Http2Upstream::on_read() {
     if (log_enabled(INFO)) {
       Log{INFO, this} << "No more read/write for this HTTP2 session";
     }
-    return -1;
+    return std::unexpected{Error::DONE};
   }
 
   handler_->signal_write();
-  return 0;
+  return {};
 }
 
 // After this function call, downstream may be deleted.
-int Http2Upstream::on_write() {
+std::expected<void, Error> Http2Upstream::on_write() {
   int rv;
   auto config = get_config();
   auto &http2conf = config->http2;
@@ -1185,7 +1185,7 @@ int Http2Upstream::on_write() {
 
   for (;;) {
     if (wb_.rleft() >= max_buffer_size_) {
-      return 0;
+      return {};
     }
 
     const uint8_t *data;
@@ -1194,7 +1194,7 @@ int Http2Upstream::on_write() {
     if (datalen < 0) {
       Log{ERROR, this} << "nghttp2_session_mem_send2() returned error: "
                        << nghttp2_strerror(static_cast<int>(datalen));
-      return -1;
+      return std::unexpected{Error::HTTP2};
     }
     if (datalen == 0) {
       break;
@@ -1207,10 +1207,10 @@ int Http2Upstream::on_write() {
     if (log_enabled(INFO)) {
       Log{INFO, this} << "No more read/write for this HTTP2 session";
     }
-    return -1;
+    return std::unexpected{Error::DONE};
   }
 
-  return 0;
+  return {};
 }
 
 ClientHandler *Http2Upstream::get_client_handler() const { return handler_; }

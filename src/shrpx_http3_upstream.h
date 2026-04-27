@@ -50,8 +50,8 @@ public:
   Http3Upstream(ClientHandler *handler);
   ~Http3Upstream() override;
 
-  int on_read() override;
-  int on_write() override;
+  std::expected<void, Error> on_read() override { return {}; }
+  std::expected<void, Error> on_write() override;
   int on_timeout(Downstream *downstream) override;
   int on_downstream_abort_request(Downstream *downstream,
                                   unsigned int status_code) override;
@@ -162,7 +162,7 @@ public:
 
   void on_send_blocked(const ngtcp2_path &path, const ngtcp2_pkt_info &pi,
                        std::span<const uint8_t> data, size_t gso_size);
-  int send_blocked_packet();
+  void send_blocked_packet();
   void signal_write_upstream_addr(const UpstreamAddr *faddr);
 
   ngtcp2_conn *get_conn() const;

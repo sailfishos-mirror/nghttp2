@@ -623,20 +623,20 @@ int htp_msg_completecb(llhttp_t *htp) {
 
 // on_read() does not consume all available data in input buffer if
 // one http request is fully received.
-int HttpsUpstream::on_read() {
+std::expected<void, Error> HttpsUpstream::on_read() {
   auto rb = handler_->get_rb();
   auto rlimit = handler_->get_rlimit();
   auto downstream = get_downstream();
 
   if (rb->rleft() == 0 || handler_->get_should_close_after_write()) {
-    return 0;
+    return {};
   }
 
   // downstream can be nullptr here, because it is initialized in the
   // callback chain called by llhttp_execute()
   if (downstream && downstream->get_upgraded()) {
-    if (!downstream->push_upload_data_chunk(rb->peek())) {
-      return -1;
+    if (auto rv = downstream->push_upload_data_chunk(rb->peek()); !rv) {
+      return rv;
     }
 
     rb->reset();
@@ -648,10 +648,10 @@ int HttpsUpstream::on_read() {
       }
       pause_read(SHRPX_NO_BUFFER);
 
-      return 0;
+      return {};
     }
 
-    return 0;
+    return {};
   }
 
   if (downstream) {
@@ -661,7 +661,7 @@ int HttpsUpstream::on_read() {
     case DownstreamState::HEADER_COMPLETE:
       break;
     default:
-      return 0;
+      return {};
     }
   }
 
@@ -700,7 +700,7 @@ int HttpsUpstream::on_read() {
         downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
       handler_->signal_write();
     }
-    return 0;
+    return {};
   }
 
   if (htperr != HPE_OK) {
@@ -714,7 +714,7 @@ int HttpsUpstream::on_read() {
         downstream->get_response_state() != DownstreamState::INITIAL) {
       handler_->set_should_close_after_write(true);
       handler_->signal_write();
-      return 0;
+      return {};
     }
 
     unsigned int status_code;
@@ -741,7 +741,7 @@ int HttpsUpstream::on_read() {
 
     handler_->signal_write();
 
-    return 0;
+    return {};
   }
 
   // downstream can be NULL here.
@@ -752,23 +752,23 @@ int HttpsUpstream::on_read() {
 
     pause_read(SHRPX_NO_BUFFER);
 
-    return 0;
+    return {};
   }
 
-  return 0;
+  return {};
 }
 
-int HttpsUpstream::on_write() {
+std::expected<void, Error> HttpsUpstream::on_write() {
   auto downstream = get_downstream();
   if (!downstream) {
-    return 0;
+    return {};
   }
 
   auto output = downstream->get_response_buf();
   const auto &resp = downstream->response();
 
   if (output->rleft() > 0) {
-    return 0;
+    return {};
   }
 
   // We need to postpone detachment until all data are sent so that
@@ -787,29 +787,35 @@ int HttpsUpstream::on_write() {
       delete_downstream();
 
       if (handler_->get_should_close_after_write()) {
-        return 0;
+        return {};
       }
 
       auto &upstreamconf = get_config()->conn.upstream;
 
       handler_->reset_upstream_read_timeout(upstreamconf.timeout.idle);
 
-      return resume_read(SHRPX_NO_BUFFER, nullptr, 0);
+      if (resume_read(SHRPX_NO_BUFFER, nullptr, 0) != 0) {
+        return std::unexpected{Error::INTERNAL};
+      }
+
+      return {};
     } else {
       // If the request is not complete, close the connection.
       delete_downstream();
 
       handler_->set_should_close_after_write(true);
 
-      return 0;
+      return {};
     }
   }
 
-  if (!downstream->resume_read(SHRPX_NO_BUFFER, resp.unconsumed_body_length)) {
-    return -1;
+  if (auto rv =
+        downstream->resume_read(SHRPX_NO_BUFFER, resp.unconsumed_body_length);
+      !rv) {
+    return rv;
   }
 
-  return 0;
+  return {};
 }
 
 ClientHandler *HttpsUpstream::get_client_handler() const { return handler_; }

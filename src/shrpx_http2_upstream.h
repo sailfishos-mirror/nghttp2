@@ -49,8 +49,8 @@ class Http2Upstream : public Upstream {
 public:
   Http2Upstream(ClientHandler *handler);
   ~Http2Upstream() override;
-  int on_read() override;
-  int on_write() override;
+  std::expected<void, Error> on_read() override;
+  std::expected<void, Error> on_write() override;
   int on_timeout(Downstream *downstream) override;
   int on_downstream_abort_request(Downstream *downstream,
                                   unsigned int status_code) override;

@@ -766,35 +766,28 @@ int Http3Upstream::init(const UpstreamAddr *faddr, const Address &remote_addr,
   return 0;
 }
 
-int Http3Upstream::on_read() { return 0; }
-
-int Http3Upstream::on_write() {
-  int rv;
-
+std::expected<void, Error> Http3Upstream::on_write() {
   if (tx_.send_blocked) {
-    rv = send_blocked_packet();
-    if (rv != 0) {
-      return -1;
-    }
+    send_blocked_packet();
 
     if (tx_.send_blocked) {
-      return 0;
+      return {};
     }
   }
 
   handler_->get_connection()->wlimit.stopw();
 
   if (write_streams() != 0) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   if (httpconn_ && nghttp3_conn_is_drained(httpconn_)) {
-    return -1;
+    return std::unexpected{Error::DONE};
   }
 
   reset_timer();
 
-  return 0;
+  return {};
 }
 
 namespace {
@@ -1878,7 +1871,7 @@ void Http3Upstream::on_send_blocked(const ngtcp2_path &path,
   p.gso_size = gso_size;
 }
 
-int Http3Upstream::send_blocked_packet() {
+void Http3Upstream::send_blocked_packet() {
   assert(tx_.send_blocked);
 
   auto &p = tx_.blocked;
@@ -1891,12 +1884,10 @@ int Http3Upstream::send_blocked_packet() {
 
     signal_write_upstream_addr(p.faddr);
 
-    return 0;
+    return;
   }
 
   tx_.send_blocked = false;
-
-  return 0;
 }
 
 void Http3Upstream::signal_write_upstream_addr(const UpstreamAddr *faddr) {
