@@ -1417,18 +1417,19 @@ HttpsUpstream::on_downstream_abort_request_with_https_redirect(
   return {};
 }
 
-int HttpsUpstream::redirect_to_https(Downstream *downstream) {
+std::expected<void, Error>
+HttpsUpstream::redirect_to_https(Downstream *downstream) {
   auto &req = downstream->request();
   if (req.method == HTTP_CONNECT || req.scheme != "http"sv ||
       req.authority.empty()) {
     error_reply(400);
-    return 0;
+    return {};
   }
 
   auto maybe_authority = util::extract_host(req.authority);
   if (!maybe_authority) {
     error_reply(400);
-    return 0;
+    return {};
   }
 
   auto &balloc = downstream->get_block_allocator();
@@ -1449,11 +1450,7 @@ int HttpsUpstream::redirect_to_https(Downstream *downstream) {
   resp.fs.add_header_token("connection"sv, "close"sv, false,
                            http2::HD_CONNECTION);
 
-  if (!send_reply(downstream, {})) {
-    return -1;
-  }
-
-  return 0;
+  return send_reply(downstream, {});
 }
 
 void HttpsUpstream::log_response_headers(DefaultMemchunks *buf) const {

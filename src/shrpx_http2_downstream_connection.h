@@ -77,8 +77,6 @@ public:
   get_downstream_addr_group() const override;
   DownstreamAddr *get_addr() const override;
 
-  int send();
-
   void attach_stream_data(StreamData *sd);
   StreamData *detach_stream_data();
 

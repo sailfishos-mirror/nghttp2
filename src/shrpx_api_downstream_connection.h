@@ -95,9 +95,10 @@ public:
   get_downstream_addr_group() const override;
   DownstreamAddr *get_addr() const override;
 
-  int send_reply(unsigned int http_status, APIStatusCode api_status,
-                 std::string_view data = ""sv);
-  int error_method_not_allowed();
+  std::expected<void, Error> send_reply(unsigned int http_status,
+                                        APIStatusCode api_status,
+                                        std::string_view data = ""sv);
+  std::expected<void, Error> error_method_not_allowed();
 
   // Handles backendconfig API request.
   std::expected<void, Error> handle_backendconfig();
