@@ -73,7 +73,7 @@ void shutdown_timeout_cb(struct ev_loop *loop, ev_timer *w, int revents) {
   auto upstream = static_cast<Http3Upstream *>(w->data);
   auto handler = upstream->get_client_handler();
 
-  if (upstream->submit_goaway() != 0) {
+  if (!upstream->submit_goaway()) {
     delete handler;
   }
 }
@@ -2825,18 +2825,18 @@ std::expected<void, Error> Http3Upstream::start_graceful_shutdown() {
   return {};
 }
 
-int Http3Upstream::submit_goaway() {
+std::expected<void, Error> Http3Upstream::submit_goaway() {
   int rv;
 
   rv = nghttp3_conn_shutdown(httpconn_);
   if (rv != 0) {
     Log{FATAL, this} << "nghttp3_conn_shutdown: " << nghttp3_strerror(rv);
-    return -1;
+    return std::unexpected{Error::HTTP3};
   }
 
   handler_->signal_write();
 
-  return 0;
+  return {};
 }
 
 int Http3Upstream::open_qlog_file(std::string_view dir,

@@ -162,7 +162,7 @@ public:
   int handshake_completed();
   std::expected<void, Error> check_shutdown();
   std::expected<void, Error> start_graceful_shutdown();
-  int submit_goaway();
+  std::expected<void, Error> submit_goaway();
   std::pair<std::span<const uint8_t>, int>
   send_packet(const UpstreamAddr *faddr, const sockaddr *remote_sa,
               socklen_t remote_salen, const sockaddr *local_sa,
