@@ -136,7 +136,8 @@ public:
 
   // Called when new request has started.
   void on_start_request(const nghttp2_frame *frame);
-  int on_request_headers(Downstream *downstream, const nghttp2_frame *frame);
+  std::expected<void, Error> on_request_headers(Downstream *downstream,
+                                                const nghttp2_frame *frame);
 
   DefaultMemchunks *get_response_buf();
 

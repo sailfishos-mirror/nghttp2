@@ -273,15 +273,16 @@ void Http2Upstream::on_start_request(const nghttp2_frame *frame) {
   }
 }
 
-int Http2Upstream::on_request_headers(Downstream *downstream,
-                                      const nghttp2_frame *frame) {
+std::expected<void, Error>
+Http2Upstream::on_request_headers(Downstream *downstream,
+                                  const nghttp2_frame *frame) {
   auto lgconf = log_config();
   lgconf->update_tstamp(std::chrono::system_clock::now());
   auto &req = downstream->request();
   req.tstamp = lgconf->tstamp;
 
   if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
-    return 0;
+    return {};
   }
 
   auto &nva = req.fs.headers();
@@ -330,10 +331,7 @@ int Http2Upstream::on_request_headers(Downstream *downstream,
 
   auto method_token = http2::lookup_method_token(method->value);
   if (method_token == -1) {
-    if (!error_reply(downstream, 501)) {
-      return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
-    }
-    return 0;
+    return error_reply(downstream, 501);
   }
 
   auto faddr = handler_->get_upstream_addr();
@@ -342,7 +340,7 @@ int Http2Upstream::on_request_headers(Downstream *downstream,
   if (method_token != HTTP_CONNECT && config->http2_proxy &&
       faddr->alt_mode == UpstreamAltMode::NONE && !authority) {
     rst_stream(downstream, NGHTTP2_PROTOCOL_ERROR);
-    return 0;
+    return {};
   }
 
   req.method = method_token;
@@ -375,10 +373,7 @@ int Http2Upstream::on_request_headers(Downstream *downstream,
   auto connect_proto = req.fs.header(http2::HD__PROTOCOL);
   if (connect_proto) {
     if (connect_proto->value != "websocket"sv) {
-      if (!error_reply(downstream, 400)) {
-        return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
-      }
-      return 0;
+      return error_reply(downstream, 400);
     }
     req.connect_proto = ConnectProto::WEBSOCKET;
   }
@@ -397,10 +392,7 @@ int Http2Upstream::on_request_headers(Downstream *downstream,
 
   if (config->http.require_http_scheme &&
       !http::check_http_scheme(req.scheme, handler_->get_ssl() != nullptr)) {
-    if (!error_reply(downstream, 400)) {
-      return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
-    }
-    return 0;
+    return error_reply(downstream, 400);
   }
 
 #ifdef HAVE_MRUBY
@@ -408,10 +400,7 @@ int Http2Upstream::on_request_headers(Downstream *downstream,
   auto mruby_ctx = worker->get_mruby_context();
 
   if (mruby_ctx->run_on_request_proc(downstream) != 0) {
-    if (!error_reply(downstream, 500)) {
-      return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
-    }
-    return 0;
+    return error_reply(downstream, 500);
   }
 #endif // defined(HAVE_MRUBY)
 
@@ -422,12 +411,12 @@ int Http2Upstream::on_request_headers(Downstream *downstream,
   }
 
   if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
-    return 0;
+    return {};
   }
 
   start_downstream(downstream);
 
-  return 0;
+  return {};
 }
 
 void Http2Upstream::start_downstream(Downstream *downstream) {
@@ -551,7 +540,11 @@ int on_frame_recv_callback(nghttp2_session *session, const nghttp2_frame *frame,
 
       handler->stop_read_timer();
 
-      return upstream->on_request_headers(downstream, frame);
+      if (!upstream->on_request_headers(downstream, frame)) {
+        return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
+      }
+
+      return 0;
     }
 
     if (frame->hd.flags & NGHTTP2_FLAG_END_STREAM) {
