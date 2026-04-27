@@ -930,7 +930,7 @@ void Http3Upstream::send_packet(const ngtcp2_path &path,
   }
 }
 
-int Http3Upstream::on_timeout(Downstream *downstream) {
+std::expected<void, Error> Http3Upstream::on_timeout(Downstream *downstream) {
   if (log_enabled(INFO)) {
     Log{INFO, this} << "Stream timeout stream_id="
                     << downstream->get_stream_id();
@@ -940,7 +940,7 @@ int Http3Upstream::on_timeout(Downstream *downstream) {
 
   handler_->signal_write();
 
-  return 0;
+  return {};
 }
 
 int Http3Upstream::on_downstream_abort_request(Downstream *downstream,

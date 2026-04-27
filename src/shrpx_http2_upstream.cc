@@ -2059,7 +2059,7 @@ void Http2Upstream::log_response_headers(
                   << format_nva(nva);
 }
 
-int Http2Upstream::on_timeout(Downstream *downstream) {
+std::expected<void, Error> Http2Upstream::on_timeout(Downstream *downstream) {
   if (log_enabled(INFO)) {
     Log{INFO, this} << "Stream timeout stream_id="
                     << downstream->get_stream_id();
@@ -2068,7 +2068,7 @@ int Http2Upstream::on_timeout(Downstream *downstream) {
   rst_stream(downstream, NGHTTP2_INTERNAL_ERROR);
   handler_->signal_write();
 
-  return 0;
+  return {};
 }
 
 void Http2Upstream::on_handler_delete() {

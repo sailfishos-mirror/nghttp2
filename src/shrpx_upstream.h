@@ -46,7 +46,9 @@ public:
   virtual ~Upstream() {}
   virtual std::expected<void, Error> on_read() = 0;
   virtual std::expected<void, Error> on_write() = 0;
-  virtual int on_timeout(Downstream *downstream) { return 0; }
+  virtual std::expected<void, Error> on_timeout(Downstream *downstream) {
+    return {};
+  }
   virtual int on_downstream_abort_request(Downstream *downstream,
                                           unsigned int status_code) = 0;
   // Called when the current request is aborted without forwarding it
