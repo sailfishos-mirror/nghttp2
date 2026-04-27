@@ -1382,7 +1382,8 @@ Http2Upstream::downstream_error(DownstreamConnection *dconn, int events) {
   return {};
 }
 
-int Http2Upstream::rst_stream(Downstream *downstream, uint32_t error_code) {
+std::expected<void, Error> Http2Upstream::rst_stream(Downstream *downstream,
+                                                     uint32_t error_code) {
   if (log_enabled(INFO)) {
     Log{INFO, this} << "RST_STREAM stream_id=" << downstream->get_stream_id()
                     << " with error_code=" << error_code;
@@ -1394,9 +1395,9 @@ int Http2Upstream::rst_stream(Downstream *downstream, uint32_t error_code) {
   if (rv < NGHTTP2_ERR_FATAL) {
     Log{FATAL, this} << "nghttp2_submit_rst_stream() failed: "
                      << nghttp2_strerror(rv);
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
-  return 0;
+  return {};
 }
 
 int Http2Upstream::terminate_session(uint32_t error_code) {

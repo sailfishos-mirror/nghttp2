@@ -71,7 +71,8 @@ public:
   void add_pending_downstream(std::unique_ptr<Downstream> downstream);
   void remove_downstream(Downstream *downstream);
 
-  int rst_stream(Downstream *downstream, uint32_t error_code);
+  std::expected<void, Error> rst_stream(Downstream *downstream,
+                                        uint32_t error_code);
   int terminate_session(uint32_t error_code);
   int error_reply(Downstream *downstream, unsigned int status_code);
 
