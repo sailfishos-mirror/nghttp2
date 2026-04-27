@@ -603,7 +603,7 @@ int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
     nghttp2_session_get_stream_user_data(session, stream_id));
 
   if (!downstream) {
-    if (upstream->consume(stream_id, len) != 0) {
+    if (!upstream->consume(stream_id, len)) {
       return NGHTTP2_ERR_CALLBACK_FAILURE;
     }
 
@@ -617,7 +617,7 @@ int on_data_chunk_recv_callback(nghttp2_session *session, uint8_t flags,
       upstream->rst_stream(downstream, NGHTTP2_INTERNAL_ERROR);
     }
 
-    if (upstream->consume(stream_id, len) != 0) {
+    if (!upstream->consume(stream_id, len)) {
       return NGHTTP2_ERR_CALLBACK_FAILURE;
     }
 
@@ -1943,12 +1943,14 @@ bool Http2Upstream::get_flow_control() const { return flow_control_; }
 
 void Http2Upstream::pause_read(IOCtrlReason reason) {}
 
-int Http2Upstream::resume_read(IOCtrlReason reason, Downstream *downstream,
-                               size_t consumed) {
+std::expected<void, Error> Http2Upstream::resume_read(IOCtrlReason reason,
+                                                      Downstream *downstream,
+                                                      size_t consumed) {
   if (get_flow_control()) {
-    if (consume(static_cast<int32_t>(downstream->get_stream_id()), consumed) !=
-        0) {
-      return -1;
+    if (auto rv =
+          consume(static_cast<int32_t>(downstream->get_stream_id()), consumed);
+        !rv) {
+      return rv;
     }
 
     auto &req = downstream->request();
@@ -1957,7 +1959,7 @@ int Http2Upstream::resume_read(IOCtrlReason reason, Downstream *downstream,
   }
 
   handler_->signal_write();
-  return 0;
+  return {};
 }
 
 std::expected<void, Error>
@@ -2019,13 +2021,14 @@ int Http2Upstream::redirect_to_https(Downstream *downstream) {
   return send_reply(downstream, {});
 }
 
-int Http2Upstream::consume(int32_t stream_id, size_t len) {
+std::expected<void, Error> Http2Upstream::consume(int32_t stream_id,
+                                                  size_t len) {
   int rv;
 
   auto faddr = handler_->get_upstream_addr();
 
   if (faddr->alt_mode != UpstreamAltMode::NONE) {
-    return 0;
+    return {};
   }
 
   rv = nghttp2_session_consume(session_, stream_id, len);
@@ -2033,10 +2036,10 @@ int Http2Upstream::consume(int32_t stream_id, size_t len) {
   if (rv != 0) {
     Log{WARN, this} << "nghttp2_session_consume() returned error: "
                     << nghttp2_strerror(rv);
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
-  return 0;
+  return {};
 }
 
 namespace {

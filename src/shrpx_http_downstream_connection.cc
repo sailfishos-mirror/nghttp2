@@ -1014,7 +1014,7 @@ int htp_hdrs_completecb(llhttp_t *htp) {
 
   if (downstream->get_upgraded()) {
     // Upgrade complete, read until EOF in both ends
-    if (upstream->resume_read(SHRPX_NO_BUFFER, downstream, 0) != 0) {
+    if (!upstream->resume_read(SHRPX_NO_BUFFER, downstream, 0)) {
       return -1;
     }
     downstream->set_request_state(DownstreamState::HEADER_COMPLETE);

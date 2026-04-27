@@ -794,11 +794,7 @@ std::expected<void, Error> HttpsUpstream::on_write() {
 
       handler_->reset_upstream_read_timeout(upstreamconf.timeout.idle);
 
-      if (resume_read(SHRPX_NO_BUFFER, nullptr, 0) != 0) {
-        return std::unexpected{Error::INTERNAL};
-      }
-
-      return {};
+      return resume_read(SHRPX_NO_BUFFER, nullptr, 0);
     } else {
       // If the request is not complete, close the connection.
       delete_downstream();
@@ -824,11 +820,12 @@ void HttpsUpstream::pause_read(IOCtrlReason reason) {
   ioctrl_.pause_read(reason);
 }
 
-int HttpsUpstream::resume_read(IOCtrlReason reason, Downstream *downstream,
-                               size_t consumed) {
+std::expected<void, Error> HttpsUpstream::resume_read(IOCtrlReason reason,
+                                                      Downstream *downstream,
+                                                      size_t consumed) {
   // downstream could be nullptr
   if (downstream && downstream->request_buf_full()) {
-    return 0;
+    return {};
   }
   if (ioctrl_.resume_read(reason)) {
     // Process remaining data in input buffer here because these bytes
@@ -837,10 +834,10 @@ int HttpsUpstream::resume_read(IOCtrlReason reason, Downstream *downstream,
 
     auto conn = handler_->get_connection();
     ev_feed_event(conn->loop, &conn->rev, EV_READ);
-    return 0;
+    return {};
   }
 
-  return 0;
+  return {};
 }
 
 std::expected<void, Error>

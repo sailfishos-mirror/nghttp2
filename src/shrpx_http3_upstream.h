@@ -81,8 +81,9 @@ public:
                                                  bool no_retry) override;
 
   void pause_read(IOCtrlReason reason) override;
-  int resume_read(IOCtrlReason reason, Downstream *downstream,
-                  size_t consumed) override;
+  std::expected<void, Error> resume_read(IOCtrlReason reason,
+                                         Downstream *downstream,
+                                         size_t consumed) override;
   int send_reply(Downstream *downstream,
                  std::span<const uint8_t> body) override;
 

@@ -1603,8 +1603,9 @@ fail:
 
 void Http3Upstream::pause_read(IOCtrlReason reason) {}
 
-int Http3Upstream::resume_read(IOCtrlReason reason, Downstream *downstream,
-                               size_t consumed) {
+std::expected<void, Error> Http3Upstream::resume_read(IOCtrlReason reason,
+                                                      Downstream *downstream,
+                                                      size_t consumed) {
   consume(downstream->get_stream_id(), consumed);
 
   auto &req = downstream->request();
@@ -1613,7 +1614,7 @@ int Http3Upstream::resume_read(IOCtrlReason reason, Downstream *downstream,
 
   handler_->signal_write();
 
-  return 0;
+  return {};
 }
 
 int Http3Upstream::send_reply(Downstream *downstream,

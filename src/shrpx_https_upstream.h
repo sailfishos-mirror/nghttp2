@@ -70,8 +70,9 @@ public:
   void error_reply(unsigned int status_code);
 
   void pause_read(IOCtrlReason reason) override;
-  int resume_read(IOCtrlReason reason, Downstream *downstream,
-                  size_t consumed) override;
+  std::expected<void, Error> resume_read(IOCtrlReason reason,
+                                         Downstream *downstream,
+                                         size_t consumed) override;
 
   std::expected<void, Error>
   on_downstream_header_complete(Downstream *downstream) override;

@@ -76,8 +76,9 @@ public:
   int error_reply(Downstream *downstream, unsigned int status_code);
 
   void pause_read(IOCtrlReason reason) override;
-  int resume_read(IOCtrlReason reason, Downstream *downstream,
-                  size_t consumed) override;
+  std::expected<void, Error> resume_read(IOCtrlReason reason,
+                                         Downstream *downstream,
+                                         size_t consumed) override;
 
   std::expected<void, Error>
   on_downstream_header_complete(Downstream *downstream) override;
@@ -113,7 +114,7 @@ public:
   int upgrade_upstream(HttpsUpstream *upstream);
   void start_settings_timer();
   void stop_settings_timer();
-  int consume(int32_t stream_id, size_t len);
+  std::expected<void, Error> consume(int32_t stream_id, size_t len);
   void log_response_headers(Downstream *downstream,
                             const std::vector<nghttp2_nv> &nva) const;
   void start_downstream(Downstream *downstream);
