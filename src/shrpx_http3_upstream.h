@@ -129,7 +129,7 @@ public:
   std::expected<void, Error> handle_expiry();
   void reset_timer();
 
-  int setup_httpconn();
+  std::expected<void, Error> setup_httpconn();
   void add_pending_downstream(std::unique_ptr<Downstream> downstream);
   int recv_stream_data(uint32_t flags, int64_t stream_id,
                        std::span<const uint8_t> data);

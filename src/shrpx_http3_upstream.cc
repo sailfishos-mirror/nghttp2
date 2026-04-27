@@ -562,7 +562,7 @@ int recv_tx_key(ngtcp2_conn *conn, ngtcp2_encryption_level level,
   }
 
   auto upstream = static_cast<Http3Upstream *>(user_data);
-  if (upstream->setup_httpconn() != 0) {
+  if (!upstream->setup_httpconn()) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
 
@@ -2576,11 +2576,11 @@ int Http3Upstream::http_reset_stream(int64_t stream_id,
   return 0;
 }
 
-int Http3Upstream::setup_httpconn() {
+std::expected<void, Error> Http3Upstream::setup_httpconn() {
   int rv;
 
   if (ngtcp2_conn_get_streams_uni_left(conn_) < 3) {
-    return -1;
+    return std::unexpected{Error::QUIC};
   }
 
   static constexpr auto callbacks = nghttp3_callbacks{
@@ -2613,7 +2613,7 @@ int Http3Upstream::setup_httpconn() {
   rv = nghttp3_conn_server_new(&httpconn_, &callbacks, &settings, mem, this);
   if (rv != 0) {
     Log{ERROR, this} << "nghttp3_conn_server_new: " << nghttp3_strerror(rv);
-    return -1;
+    return std::unexpected{Error::HTTP3};
   }
 
   auto params = ngtcp2_conn_get_local_transport_params(conn_);
@@ -2626,14 +2626,14 @@ int Http3Upstream::setup_httpconn() {
   rv = ngtcp2_conn_open_uni_stream(conn_, &ctrl_stream_id, nullptr);
   if (rv != 0) {
     Log{ERROR, this} << "ngtcp2_conn_open_uni_stream: " << ngtcp2_strerror(rv);
-    return -1;
+    return std::unexpected{Error::QUIC};
   }
 
   rv = nghttp3_conn_bind_control_stream(httpconn_, ctrl_stream_id);
   if (rv != 0) {
     Log{ERROR, this} << "nghttp3_conn_bind_control_stream: "
                      << nghttp3_strerror(rv);
-    return -1;
+    return std::unexpected{Error::HTTP3};
   }
 
   int64_t qpack_enc_stream_id, qpack_dec_stream_id;
@@ -2641,13 +2641,13 @@ int Http3Upstream::setup_httpconn() {
   rv = ngtcp2_conn_open_uni_stream(conn_, &qpack_enc_stream_id, nullptr);
   if (rv != 0) {
     Log{ERROR, this} << "ngtcp2_conn_open_uni_stream: " << ngtcp2_strerror(rv);
-    return -1;
+    return std::unexpected{Error::QUIC};
   }
 
   rv = ngtcp2_conn_open_uni_stream(conn_, &qpack_dec_stream_id, nullptr);
   if (rv != 0) {
     Log{ERROR, this} << "ngtcp2_conn_open_uni_stream: " << ngtcp2_strerror(rv);
-    return -1;
+    return std::unexpected{Error::QUIC};
   }
 
   rv = nghttp3_conn_bind_qpack_streams(httpconn_, qpack_enc_stream_id,
@@ -2655,10 +2655,10 @@ int Http3Upstream::setup_httpconn() {
   if (rv != 0) {
     Log{ERROR, this} << "nghttp3_conn_bind_qpack_streams: "
                      << nghttp3_strerror(rv);
-    return -1;
+    return std::unexpected{Error::HTTP3};
   }
 
-  return 0;
+  return {};
 }
 
 int Http3Upstream::error_reply(Downstream *downstream,
