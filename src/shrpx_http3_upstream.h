@@ -144,24 +144,30 @@ public:
   std::expected<void, Error> error_reply(Downstream *downstream,
                                          unsigned int status_code);
   void http_begin_request_headers(int64_t stream_id);
-  int http_recv_request_header(Downstream *downstream, int32_t token,
-                               nghttp3_rcbuf *name, nghttp3_rcbuf *value,
-                               uint8_t flags, bool trailer);
-  int http_end_request_headers(Downstream *downstream, int fin);
-  int http_end_stream(Downstream *downstream);
+  std::expected<void, Error>
+  http_recv_request_header(Downstream *downstream, int32_t token,
+                           nghttp3_rcbuf *name, nghttp3_rcbuf *value,
+                           uint8_t flags, bool trailer);
+  std::expected<void, Error> http_end_request_headers(Downstream *downstream,
+                                                      int fin);
+  std::expected<void, Error> http_end_stream(Downstream *downstream);
+  void http_stream_close(Downstream *downstream, uint64_t app_error_code);
+  std::expected<void, Error> http_acked_stream_data(Downstream *downstream,
+                                                    uint64_t datalen);
+  std::expected<void, Error> http_reset_stream(int64_t stream_id,
+                                               uint64_t app_error_code);
+  std::expected<void, Error> http_stop_sending(int64_t stream_id,
+                                               uint64_t app_error_code);
+  std::expected<void, Error> http_recv_data(Downstream *downstream,
+                                            std::span<const uint8_t> data);
   void start_downstream(Downstream *downstream);
   void initiate_downstream(Downstream *downstream);
   int shutdown_stream(Downstream *downstream, uint64_t app_error_code);
   int shutdown_stream_read(int64_t stream_id, uint64_t app_error_code);
-  int http_stream_close(Downstream *downstream, uint64_t app_error_code);
   void consume(int64_t stream_id, size_t nconsumed);
   void remove_downstream(Downstream *downstream);
   void log_response_headers(Downstream *downstream,
                             const std::vector<nghttp3_nv> &nva) const;
-  int http_acked_stream_data(Downstream *downstream, uint64_t datalen);
-  int http_reset_stream(int64_t stream_id, uint64_t app_error_code);
-  int http_stop_sending(int64_t stream_id, uint64_t app_error_code);
-  int http_recv_data(Downstream *downstream, std::span<const uint8_t> data);
   std::expected<void, Error> check_shutdown();
   std::expected<void, Error> start_graceful_shutdown();
   std::expected<void, Error> submit_goaway();
