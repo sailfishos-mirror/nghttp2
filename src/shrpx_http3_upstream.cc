@@ -508,7 +508,11 @@ int Http3Upstream::handshake_completed() {
 
   auto path = ngtcp2_conn_get_path(conn_);
 
-  return send_new_token(&path->remote);
+  if (!send_new_token(&path->remote)) {
+    return -1;
+  }
+
+  return 0;
 }
 
 namespace {
@@ -521,7 +525,7 @@ int path_validation(ngtcp2_conn *conn, uint32_t flags, const ngtcp2_path *path,
   }
 
   auto upstream = static_cast<Http3Upstream *>(user_data);
-  if (upstream->send_new_token(&path->remote) != 0) {
+  if (!upstream->send_new_token(&path->remote)) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
 
@@ -529,7 +533,8 @@ int path_validation(ngtcp2_conn *conn, uint32_t flags, const ngtcp2_path *path,
 }
 } // namespace
 
-int Http3Upstream::send_new_token(const ngtcp2_addr *remote_addr) {
+std::expected<void, Error>
+Http3Upstream::send_new_token(const ngtcp2_addr *remote_addr) {
   auto worker = handler_->get_worker();
   auto conn_handler = worker->get_connection_handler();
   auto &qkms = conn_handler->get_quic_keying_materials();
@@ -540,7 +545,7 @@ int Http3Upstream::send_new_token(const ngtcp2_addr *remote_addr) {
   auto token = generate_token(tokenbuf, remote_addr->addr, remote_addr->addrlen,
                               qkm.secret, qkm.id);
   if (!token) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   assert(token->size() == NGTCP2_CRYPTO_MAX_REGULAR_TOKENLEN + 1);
@@ -548,10 +553,10 @@ int Http3Upstream::send_new_token(const ngtcp2_addr *remote_addr) {
   auto rv = ngtcp2_conn_submit_new_token(conn_, token->data(), token->size());
   if (rv != 0) {
     Log{ERROR, this} << "ngtcp2_conn_submit_new_token: " << ngtcp2_strerror(rv);
-    return -1;
+    return std::unexpected{Error::QUIC};
   }
 
-  return 0;
+  return {};
 }
 
 namespace {
