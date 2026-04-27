@@ -99,8 +99,10 @@ public:
 
   Downstream *on_downstream_push_promise(Downstream *downstream,
                                          int32_t promised_stream_id) override;
-  int on_downstream_push_promise_complete(
-    Downstream *downstream, Downstream *promised_downstream) override;
+  std::expected<void, Error> on_downstream_push_promise_complete(
+    Downstream *downstream, Downstream *promised_downstream) override {
+    return std::unexpected{Error::UNSUPPORTED};
+  }
   bool push_enabled() const override;
   void cancel_premature_downstream(Downstream *promised_downstream) override;
 

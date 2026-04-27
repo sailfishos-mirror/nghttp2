@@ -112,8 +112,7 @@ public:
                              int32_t promised_stream_id) = 0;
   // Called when PUSH_PROMISE frame was completely received in
   // downstream.  The associated downstream is given as |downstream|.
-  // This function returns 0 if it succeeds, or -1.
-  virtual int
+  virtual std::expected<void, Error>
   on_downstream_push_promise_complete(Downstream *downstream,
                                       Downstream *promised_downstream) = 0;
   // Returns true if server push is enabled in upstream connection.

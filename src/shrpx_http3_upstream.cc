@@ -1714,11 +1714,6 @@ Http3Upstream::on_downstream_push_promise(Downstream *downstream,
   return nullptr;
 }
 
-int Http3Upstream::on_downstream_push_promise_complete(
-  Downstream *downstream, Downstream *promised_downstream) {
-  return 0;
-}
-
 bool Http3Upstream::push_enabled() const { return false; }
 
 void Http3Upstream::cancel_premature_downstream(

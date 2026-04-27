@@ -2253,12 +2253,8 @@ Http2Session::handle_downstream_push_promise_complete(
   promised_downstream->set_request_state(DownstreamState::MSG_COMPLETE);
   promised_downstream->set_request_header_sent(true);
 
-  if (upstream->on_downstream_push_promise_complete(downstream,
-                                                    promised_downstream) != 0) {
-    return std::unexpected{Error::INTERNAL};
-  }
-
-  return {};
+  return upstream->on_downstream_push_promise_complete(downstream,
+                                                       promised_downstream);
 }
 
 size_t Http2Session::get_num_dconns() const { return dconns_.size(); }

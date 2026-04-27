@@ -2382,7 +2382,7 @@ Http2Upstream::on_downstream_push_promise(Downstream *downstream,
   return ptr;
 }
 
-int Http2Upstream::on_downstream_push_promise_complete(
+std::expected<void, Error> Http2Upstream::on_downstream_push_promise_complete(
   Downstream *downstream, Downstream *promised_downstream) {
   std::vector<nghttp2_nv> nva;
 
@@ -2401,12 +2401,12 @@ int Http2Upstream::on_downstream_push_promise_complete(
     static_cast<int32_t>(downstream->get_stream_id()), nva.data(), nva.size(),
     promised_downstream);
   if (promised_stream_id < 0) {
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   promised_downstream->set_stream_id(promised_stream_id);
 
-  return 0;
+  return {};
 }
 
 void Http2Upstream::cancel_premature_downstream(
