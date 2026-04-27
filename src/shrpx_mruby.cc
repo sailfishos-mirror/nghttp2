@@ -46,16 +46,12 @@ MRubyContext::~MRubyContext() {
   }
 }
 
-int MRubyContext::run_app(Downstream *downstream, int phase) {
+std::expected<void, Error> MRubyContext::run_app(Downstream *downstream,
+                                                 int phase) {
   if (!mrb_) {
-    return 0;
+    return {};
   }
 
-  MRubyAssocData data{downstream, phase};
-
-  mrb_->ud = &data;
-
-  int rv = 0;
   auto ai = mrb_gc_arena_save(mrb_);
   auto ai_d = defer([mrb = mrb_, ai] { mrb_gc_arena_restore(mrb, ai); });
 
@@ -63,13 +59,13 @@ int MRubyContext::run_app(Downstream *downstream, int phase) {
   switch (phase) {
   case PHASE_REQUEST:
     if (!mrb_respond_to(mrb_, app_, mrb_intern_lit(mrb_, "on_req"))) {
-      return 0;
+      return {};
     }
     method = "on_req";
     break;
   case PHASE_RESPONSE:
     if (!mrb_respond_to(mrb_, app_, mrb_intern_lit(mrb_, "on_resp"))) {
-      return 0;
+      return {};
     }
     method = "on_resp";
     break;
@@ -78,32 +74,41 @@ int MRubyContext::run_app(Downstream *downstream, int phase) {
     abort();
   }
 
+  MRubyAssocData data{
+    .downstream = downstream,
+    .phase = phase,
+  };
+
+  mrb_->ud = &data;
+
+  auto ud_d = defer([mrb = mrb_] { mrb->ud = nullptr; });
+
   auto res = mrb_funcall(mrb_, app_, method, 1, env_);
   (void)res;
 
   if (mrb_->exc) {
-    // If response has been committed, ignore error
-    if (downstream->get_response_state() != DownstreamState::MSG_COMPLETE) {
-      rv = -1;
-    }
-
     auto exc = mrb_obj_value(mrb_->exc);
     auto inspect = mrb_inspect(mrb_, exc);
 
     Log{ERROR} << "Exception caught while executing mruby code: "
                << mrb_str_to_cstr(mrb_, inspect);
+
+    // If response has been committed, ignore error
+    if (downstream->get_response_state() != DownstreamState::MSG_COMPLETE) {
+      return std::unexpected{Error::MRUBY};
+    }
   }
 
-  mrb_->ud = nullptr;
-
-  return rv;
+  return {};
 }
 
-int MRubyContext::run_on_request_proc(Downstream *downstream) {
+std::expected<void, Error>
+MRubyContext::run_on_request_proc(Downstream *downstream) {
   return run_app(downstream, PHASE_REQUEST);
 }
 
-int MRubyContext::run_on_response_proc(Downstream *downstream) {
+std::expected<void, Error>
+MRubyContext::run_on_response_proc(Downstream *downstream) {
   return run_app(downstream, PHASE_RESPONSE);
 }
 

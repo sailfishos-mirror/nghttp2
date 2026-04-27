@@ -399,7 +399,7 @@ Http2Upstream::on_request_headers(Downstream *downstream,
   auto worker = handler_->get_worker();
   auto mruby_ctx = worker->get_mruby_context();
 
-  if (mruby_ctx->run_on_request_proc(downstream) != 0) {
+  if (!mruby_ctx->run_on_request_proc(downstream)) {
     return error_reply(downstream, 500);
   }
 #endif // defined(HAVE_MRUBY)
@@ -462,7 +462,7 @@ void Http2Upstream::initiate_downstream(Downstream *downstream) {
   const auto &group = dconn_ptr->get_downstream_addr_group();
   if (group) {
     const auto &mruby_ctx = group->shared_addr->mruby_ctx;
-    if (mruby_ctx->run_on_request_proc(downstream) != 0) {
+    if (!mruby_ctx->run_on_request_proc(downstream)) {
       if (!error_reply(downstream, 500)) {
         rst_stream(downstream, NGHTTP2_INTERNAL_ERROR);
       }
@@ -733,7 +733,7 @@ int on_frame_send_callback(nghttp2_session *session, const nghttp2_frame *frame,
     auto worker = handler->get_worker();
     auto mruby_ctx = worker->get_mruby_context();
 
-    if (mruby_ctx->run_on_request_proc(ptr) != 0) {
+    if (!mruby_ctx->run_on_request_proc(ptr)) {
       if (!upstream->error_reply(ptr, 500)) {
         upstream->rst_stream(ptr, NGHTTP2_INTERNAL_ERROR);
         return 0;
@@ -1659,12 +1659,12 @@ Http2Upstream::on_downstream_header_complete(Downstream *downstream) {
     if (group) {
       const auto &dmruby_ctx = group->shared_addr->mruby_ctx;
 
-      if (dmruby_ctx->run_on_response_proc(downstream) != 0) {
+      if (auto rv = dmruby_ctx->run_on_response_proc(downstream); !rv) {
         if (auto rv = error_reply(downstream, 500); !rv) {
           return rv;
         }
         // Returning an error will signal deletion of dconn.
-        return std::unexpected{Error::INTERNAL};
+        return rv;
       }
 
       if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
@@ -1675,12 +1675,12 @@ Http2Upstream::on_downstream_header_complete(Downstream *downstream) {
     auto worker = handler_->get_worker();
     auto mruby_ctx = worker->get_mruby_context();
 
-    if (mruby_ctx->run_on_response_proc(downstream) != 0) {
+    if (auto rv = mruby_ctx->run_on_response_proc(downstream); !rv) {
       if (auto rv = error_reply(downstream, 500); !rv) {
         return rv;
       }
       // Returning an error will signal deletion of dconn.
-      return std::unexpected{Error::INTERNAL};
+      return rv;
     }
 
     if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {

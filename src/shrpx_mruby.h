@@ -49,10 +49,10 @@ public:
   MRubyContext(mrb_state *mrb, mrb_value app, mrb_value env);
   ~MRubyContext();
 
-  int run_on_request_proc(Downstream *downstream);
-  int run_on_response_proc(Downstream *downstream);
+  std::expected<void, Error> run_on_request_proc(Downstream *downstream);
+  std::expected<void, Error> run_on_response_proc(Downstream *downstream);
 
-  int run_app(Downstream *downstream, int phase);
+  std::expected<void, Error> run_app(Downstream *downstream, int phase);
 
   void delete_downstream(Downstream *downstream);
 
