@@ -136,7 +136,8 @@ public:
   int acked_stream_data_offset(int64_t stream_id, uint64_t datalen);
   int extend_max_stream_data(int64_t stream_id);
   void extend_max_remote_streams_bidi(uint64_t max_streams);
-  int error_reply(Downstream *downstream, unsigned int status_code);
+  std::expected<void, Error> error_reply(Downstream *downstream,
+                                         unsigned int status_code);
   void http_begin_request_headers(int64_t stream_id);
   int http_recv_request_header(Downstream *downstream, int32_t token,
                                nghttp3_rcbuf *name, nghttp3_rcbuf *value,

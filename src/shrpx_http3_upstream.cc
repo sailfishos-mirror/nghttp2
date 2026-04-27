@@ -946,12 +946,8 @@ std::expected<void, Error> Http3Upstream::on_timeout(Downstream *downstream) {
 std::expected<void, Error>
 Http3Upstream::on_downstream_abort_request(Downstream *downstream,
                                            unsigned int status_code) {
-  int rv;
-
-  rv = error_reply(downstream, status_code);
-
-  if (rv != 0) {
-    return std::unexpected{Error::INTERNAL};
+  if (auto rv = error_reply(downstream, status_code); !rv) {
+    return rv;
   }
 
   handler_->signal_write();
@@ -999,8 +995,8 @@ Http3Upstream::downstream_read(DownstreamConnection *dconn) {
     dconn = nullptr;
   } else if (downstream->get_response_state() ==
              DownstreamState::MSG_BAD_HEADER) {
-    if (error_reply(downstream, 502) != 0) {
-      return std::unexpected{Error::INTERNAL};
+    if (auto rv = error_reply(downstream, 502); !rv) {
+      return rv;
     }
     downstream->pop_downstream_connection();
     // dconn was deleted
@@ -1086,8 +1082,8 @@ Http3Upstream::downstream_eof(DownstreamConnection *dconn) {
              DownstreamState::MSG_COMPLETE) {
     // If stream was not closed, then we set MSG_COMPLETE and let
     // on_stream_close_callback delete downstream.
-    if (error_reply(downstream, 502) != 0) {
-      return std::unexpected{Error::INTERNAL};
+    if (auto rv = error_reply(downstream, 502); !rv) {
+      return rv;
     }
   }
   handler_->signal_write();
@@ -1143,8 +1139,8 @@ Http3Upstream::downstream_error(DownstreamConnection *dconn, int events) {
       } else {
         status = 502;
       }
-      if (error_reply(downstream, status) != 0) {
-        return std::unexpected{Error::INTERNAL};
+      if (auto rv = error_reply(downstream, status); !rv) {
+        return rv;
       }
     }
     downstream->set_response_state(DownstreamState::MSG_COMPLETE);
@@ -1231,8 +1227,8 @@ Http3Upstream::on_downstream_header_complete(Downstream *downstream) {
       const auto &dmruby_ctx = group->shared_addr->mruby_ctx;
 
       if (dmruby_ctx->run_on_response_proc(downstream) != 0) {
-        if (error_reply(downstream, 500) != 0) {
-          return std::unexpected{Error::INTERNAL};
+        if (auto rv = error_reply(downstream, 500); !rv) {
+          return rv;
         }
         // Returning an error will signal deletion of dconn.
         return std::unexpected{Error::INTERNAL};
@@ -1247,8 +1243,8 @@ Http3Upstream::on_downstream_header_complete(Downstream *downstream) {
     auto mruby_ctx = worker->get_mruby_context();
 
     if (mruby_ctx->run_on_response_proc(downstream) != 0) {
-      if (error_reply(downstream, 500) != 0) {
-        return std::unexpected{Error::INTERNAL};
+      if (auto rv = error_reply(downstream, 500); !rv) {
+        return rv;
       }
       // Returning an error will signal deletion of dconn.
       return std::unexpected{Error::INTERNAL};
@@ -2124,7 +2120,7 @@ int Http3Upstream::http_recv_request_header(Downstream *downstream,
       return 0;
     }
 
-    if (error_reply(downstream, 431) != 0) {
+    if (!error_reply(downstream, 431)) {
       return -1;
     }
 
@@ -2218,7 +2214,7 @@ int Http3Upstream::http_end_request_headers(Downstream *downstream, int fin) {
 
   auto method_token = http2::lookup_method_token(method->value);
   if (method_token == -1) {
-    if (error_reply(downstream, 501) != 0) {
+    if (!error_reply(downstream, 501)) {
       return -1;
     }
     return 0;
@@ -2265,7 +2261,7 @@ int Http3Upstream::http_end_request_headers(Downstream *downstream, int fin) {
   auto connect_proto = req.fs.header(http2::HD__PROTOCOL);
   if (connect_proto) {
     if (connect_proto->value != "websocket"sv) {
-      if (error_reply(downstream, 400) != 0) {
+      if (!error_reply(downstream, 400)) {
         return -1;
       }
       return 0;
@@ -2285,7 +2281,7 @@ int Http3Upstream::http_end_request_headers(Downstream *downstream, int fin) {
 
   if (config->http.require_http_scheme &&
       !http::check_http_scheme(req.scheme, /* encrypted = */ true)) {
-    if (error_reply(downstream, 400) != 0) {
+    if (!error_reply(downstream, 400)) {
       return -1;
     }
   }
@@ -2295,7 +2291,7 @@ int Http3Upstream::http_end_request_headers(Downstream *downstream, int fin) {
   auto mruby_ctx = worker->get_mruby_context();
 
   if (mruby_ctx->run_on_request_proc(downstream) != 0) {
-    if (error_reply(downstream, 500) != 0) {
+    if (!error_reply(downstream, 500)) {
       return -1;
     }
     return 0;
@@ -2321,8 +2317,6 @@ void Http3Upstream::start_downstream(Downstream *downstream) {
 }
 
 void Http3Upstream::initiate_downstream(Downstream *downstream) {
-  int rv;
-
 #ifdef HAVE_MRUBY
   DownstreamConnection *dconn_ptr;
 #endif // defined(HAVE_MRUBY)
@@ -2335,8 +2329,7 @@ void Http3Upstream::initiate_downstream(Downstream *downstream) {
         abort();
       }
 
-      rv = error_reply(downstream, 502);
-      if (rv != 0) {
+      if (!error_reply(downstream, 502)) {
         shutdown_stream(downstream, NGHTTP3_H3_INTERNAL_ERROR);
       }
 
@@ -2361,7 +2354,7 @@ void Http3Upstream::initiate_downstream(Downstream *downstream) {
   if (group) {
     const auto &mruby_ctx = group->shared_addr->mruby_ctx;
     if (mruby_ctx->run_on_request_proc(downstream) != 0) {
-      if (error_reply(downstream, 500) != 0) {
+      if (!error_reply(downstream, 500)) {
         shutdown_stream(downstream, NGHTTP3_H3_INTERNAL_ERROR);
       }
 
@@ -2377,7 +2370,7 @@ void Http3Upstream::initiate_downstream(Downstream *downstream) {
 #endif // defined(HAVE_MRUBY)
 
   if (!downstream->push_request_headers()) {
-    if (error_reply(downstream, 502) != 0) {
+    if (!error_reply(downstream, 502)) {
       shutdown_stream(downstream, NGHTTP3_H3_INTERNAL_ERROR);
     }
 
@@ -2661,8 +2654,8 @@ std::expected<void, Error> Http3Upstream::setup_httpconn() {
   return {};
 }
 
-int Http3Upstream::error_reply(Downstream *downstream,
-                               unsigned int status_code) {
+std::expected<void, Error>
+Http3Upstream::error_reply(Downstream *downstream, unsigned int status_code) {
   int rv;
   auto &resp = downstream->response();
 
@@ -2705,17 +2698,17 @@ int Http3Upstream::error_reply(Downstream *downstream,
   if (nghttp3_err_is_fatal(rv)) {
     Log{FATAL, this} << "nghttp3_conn_submit_response() failed: "
                      << nghttp3_strerror(rv);
-    return -1;
+    return std::unexpected{Error::HTTP3};
   }
 
   downstream->reset_upstream_wtimer();
 
   if (shutdown_stream_read(downstream->get_stream_id(), NGHTTP3_H3_NO_ERROR) !=
       0) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
-  return 0;
+  return {};
 }
 
 int Http3Upstream::shutdown_stream(Downstream *downstream,
