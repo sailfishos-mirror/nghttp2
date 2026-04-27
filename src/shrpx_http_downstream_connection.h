@@ -93,7 +93,7 @@ public:
   std::expected<void, Error> noop() { return {}; }
   void void_noop() {}
 
-  int process_blocked_request_buf();
+  void process_blocked_request_buf();
 
 private:
   Connection conn_;

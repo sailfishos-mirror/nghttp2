@@ -700,7 +700,7 @@ std::expected<void, Error> HttpDownstreamConnection::push_request_headers() {
   return {};
 }
 
-int HttpDownstreamConnection::process_blocked_request_buf() {
+void HttpDownstreamConnection::process_blocked_request_buf() {
   auto src = downstream_->get_blocked_request_buf();
 
   if (src->rleft()) {
@@ -723,8 +723,6 @@ int HttpDownstreamConnection::process_blocked_request_buf() {
       downstream_->get_chunked_request()) {
     end_upload_data_chunk();
   }
-
-  return 0;
 }
 
 std::expected<void, Error> HttpDownstreamConnection::push_upload_data_chunk(
