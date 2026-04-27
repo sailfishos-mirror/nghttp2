@@ -108,7 +108,7 @@ public:
 
   void reset_current_header_length();
   void log_response_headers(DefaultMemchunks *buf) const;
-  int redirect_to_https(Downstream *downstream);
+  std::expected<void, Error> redirect_to_https(Downstream *downstream);
 
   // Called when new request has started.
   void on_start_request();
