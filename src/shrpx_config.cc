@@ -4718,7 +4718,7 @@ int configure_downstream_group(Config *config, bool http2_proxy,
 #ifdef HAVE_MRUBY
     // Try compile mruby script and catch compile error early.
     if (!g.mruby_file.empty()) {
-      if (mruby::create_mruby_context(g.mruby_file) == nullptr) {
+      if (!mruby::create_mruby_context(g.mruby_file)) {
         Log{config->ignore_per_pattern_mruby_error ? ERROR : FATAL}
           << "backend: Could not compile mruby file for pattern " << g.pattern;
         if (!config->ignore_per_pattern_mruby_error) {
@@ -4734,7 +4734,7 @@ int configure_downstream_group(Config *config, bool http2_proxy,
   // Try compile mruby script (--mruby-file) here to catch compile
   // error early.
   if (!config->mruby_file.empty()) {
-    if (mruby::create_mruby_context(config->mruby_file) == nullptr) {
+    if (!mruby::create_mruby_context(config->mruby_file)) {
       Log{FATAL} << "mruby-file: Could not compile mruby file";
       return -1;
     }

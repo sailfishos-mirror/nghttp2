@@ -28,11 +28,13 @@
 #include "shrpx.h"
 
 #include <memory>
+#include <expected>
 
 #include <mruby.h>
 #include <mruby/proc.h>
 
 #include "template.h"
+#include "errors.h"
 
 using namespace nghttp2;
 
@@ -71,9 +73,11 @@ struct MRubyAssocData {
   int phase;
 };
 
-RProc *compile(mrb_state *mrb, std::string_view filename);
+std::expected<RProc *, Error> compile(mrb_state *mrb,
+                                      std::string_view filename);
 
-std::unique_ptr<MRubyContext> create_mruby_context(std::string_view filename);
+std::expected<std::unique_ptr<MRubyContext>, Error>
+create_mruby_context(std::string_view filename);
 
 // Return interned |ptr|.
 mrb_sym intern_ptr(mrb_state *mrb, void *ptr);
