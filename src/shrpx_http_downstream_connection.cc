@@ -190,7 +190,7 @@ void connectcb(struct ev_loop *loop, ev_io *w, int revents) {
   auto conn = static_cast<Connection *>(w->data);
   auto dconn = static_cast<HttpDownstreamConnection *>(conn->data);
   auto downstream = dconn->get_downstream();
-  if (dconn->connected() != 0) {
+  if (!dconn->connected()) {
     backend_retry(downstream);
     return;
   }
@@ -700,7 +700,7 @@ std::expected<void, Error> HttpDownstreamConnection::push_request_headers() {
   return {};
 }
 
-int HttpDownstreamConnection::process_blocked_request_buf() {
+void HttpDownstreamConnection::process_blocked_request_buf() {
   auto src = downstream_->get_blocked_request_buf();
 
   if (src->rleft()) {
@@ -723,8 +723,6 @@ int HttpDownstreamConnection::process_blocked_request_buf() {
       downstream_->get_chunked_request()) {
     end_upload_data_chunk();
   }
-
-  return 0;
 }
 
 std::expected<void, Error> HttpDownstreamConnection::push_upload_data_chunk(
@@ -1037,8 +1035,9 @@ int htp_hdrs_completecb(llhttp_t *htp) {
 } // namespace
 
 namespace {
-int ensure_header_field_buffer(const Downstream *downstream,
-                               const HttpConfig &httpconf, size_t len) {
+std::expected<void, Error>
+ensure_header_field_buffer(const Downstream *downstream,
+                           const HttpConfig &httpconf, size_t len) {
   auto &resp = downstream->response();
 
   if (resp.fs.buffer_size() + len > httpconf.response_header_field_buffer) {
@@ -1046,16 +1045,17 @@ int ensure_header_field_buffer(const Downstream *downstream,
       Log{INFO, downstream} << "Too large header header field size="
                             << resp.fs.buffer_size() + len;
     }
-    return -1;
+    return std::unexpected{Error::HTTP_FIELD_TOO_LARGE};
   }
 
-  return 0;
+  return {};
 }
 } // namespace
 
 namespace {
-int ensure_max_header_fields(const Downstream *downstream,
-                             const HttpConfig &httpconf) {
+std::expected<void, Error>
+ensure_max_header_fields(const Downstream *downstream,
+                         const HttpConfig &httpconf) {
   auto &resp = downstream->response();
 
   if (resp.fs.num_fields() >= httpconf.max_response_header_fields) {
@@ -1063,10 +1063,10 @@ int ensure_max_header_fields(const Downstream *downstream,
       Log{INFO, downstream} << "Too many header field num="
                             << resp.fs.num_fields() + 1;
     }
-    return -1;
+    return std::unexpected{Error::HTTP_FIELD_TOO_LARGE};
   }
 
-  return 0;
+  return {};
 }
 } // namespace
 
@@ -1076,7 +1076,7 @@ int htp_hdr_keycb(llhttp_t *htp, const char *data, size_t len) {
   auto &resp = downstream->response();
   auto &httpconf = get_config()->http;
 
-  if (ensure_header_field_buffer(downstream, httpconf, len) != 0) {
+  if (!ensure_header_field_buffer(downstream, httpconf, len)) {
     return -1;
   }
 
@@ -1086,7 +1086,7 @@ int htp_hdr_keycb(llhttp_t *htp, const char *data, size_t len) {
     if (resp.fs.header_key_prev()) {
       resp.fs.append_last_header_key(name);
     } else {
-      if (ensure_max_header_fields(downstream, httpconf) != 0) {
+      if (!ensure_max_header_fields(downstream, httpconf)) {
         return -1;
       }
       resp.fs.alloc_add_header_name(name);
@@ -1096,7 +1096,7 @@ int htp_hdr_keycb(llhttp_t *htp, const char *data, size_t len) {
     if (resp.fs.trailer_key_prev()) {
       resp.fs.append_last_trailer_key(name);
     } else {
-      if (ensure_max_header_fields(downstream, httpconf) != 0) {
+      if (!ensure_max_header_fields(downstream, httpconf)) {
         // Could not ignore this trailer field easily, since we may
         // get its value in htp_hdr_valcb, and it will be added to
         // wrong place or crash if trailer fields are currently empty.
@@ -1115,7 +1115,7 @@ int htp_hdr_valcb(llhttp_t *htp, const char *data, size_t len) {
   auto &resp = downstream->response();
   auto &httpconf = get_config()->http;
 
-  if (ensure_header_field_buffer(downstream, httpconf, len) != 0) {
+  if (!ensure_header_field_buffer(downstream, httpconf, len)) {
     return -1;
   }
 
@@ -1237,7 +1237,7 @@ std::expected<void, Error> HttpDownstreamConnection::read_clear() {
                             << llhttp_errno_name(htperr);
           }
 
-          return std::unexpected{Error::INTERNAL};
+          return std::unexpected{Error::HTTP1};
         }
       }
 
@@ -1371,7 +1371,7 @@ std::expected<void, Error> HttpDownstreamConnection::read_tls() {
                             << llhttp_errno_name(htperr);
           }
 
-          return std::unexpected{Error::INTERNAL};
+          return std::unexpected{Error::HTTP1};
         }
       }
 
@@ -1484,7 +1484,7 @@ HttpDownstreamConnection::process_input(std::span<const uint8_t> data) {
                       << llhttp_get_error_reason(&response_htp_);
     }
 
-    return std::unexpected{Error::INTERNAL};
+    return std::unexpected{Error::HTTP1};
   }
 
   if (downstream_->get_upgraded()) {
@@ -1512,7 +1512,7 @@ HttpDownstreamConnection::process_input(std::span<const uint8_t> data) {
   return {};
 }
 
-int HttpDownstreamConnection::connected() {
+std::expected<void, Error> HttpDownstreamConnection::connected() {
   auto &connect_blocker = addr_->connect_blocker;
 
   auto sock_error = util::get_socket_error(conn_.fd);
@@ -1525,7 +1525,7 @@ int HttpDownstreamConnection::connected() {
 
     downstream_failure(addr_, raddr_);
 
-    return -1;
+    return std::unexpected{Error::CONNECT_FAIL};
   }
 
   if (log_enabled(INFO)) {
@@ -1545,7 +1545,7 @@ int HttpDownstreamConnection::connected() {
     on_read_ = &HttpDownstreamConnection::tls_handshake;
     on_write_ = &HttpDownstreamConnection::tls_handshake;
 
-    return 0;
+    return {};
   }
 
   signal_write_ = &HttpDownstreamConnection::actual_signal_write;
@@ -1558,7 +1558,7 @@ int HttpDownstreamConnection::connected() {
   on_read_ = &HttpDownstreamConnection::read_clear;
   on_write_ = &HttpDownstreamConnection::write_first;
 
-  return 0;
+  return {};
 }
 
 std::expected<void, Error> HttpDownstreamConnection::on_read() {

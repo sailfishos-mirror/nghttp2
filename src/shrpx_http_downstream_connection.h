@@ -83,7 +83,7 @@ public:
   std::expected<void, Error> process_input(std::span<const uint8_t> data);
   std::expected<void, Error> tls_handshake();
 
-  int connected();
+  std::expected<void, Error> connected();
   void signal_write();
   void actual_signal_write();
 
@@ -93,7 +93,7 @@ public:
   std::expected<void, Error> noop() { return {}; }
   void void_noop() {}
 
-  int process_blocked_request_buf();
+  void process_blocked_request_buf();
 
 private:
   Connection conn_;
