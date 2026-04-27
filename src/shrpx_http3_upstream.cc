@@ -296,7 +296,7 @@ int recv_stream_data(ngtcp2_conn *conn, uint32_t flags, int64_t stream_id,
                      void *user_data, void *stream_user_data) {
   auto upstream = static_cast<Http3Upstream *>(user_data);
 
-  if (upstream->recv_stream_data(flags, stream_id, {data, datalen}) != 0) {
+  if (!upstream->recv_stream_data(flags, stream_id, {data, datalen})) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
 
@@ -304,8 +304,9 @@ int recv_stream_data(ngtcp2_conn *conn, uint32_t flags, int64_t stream_id,
 }
 } // namespace
 
-int Http3Upstream::recv_stream_data(uint32_t flags, int64_t stream_id,
-                                    std::span<const uint8_t> data) {
+std::expected<void, Error>
+Http3Upstream::recv_stream_data(uint32_t flags, int64_t stream_id,
+                                std::span<const uint8_t> data) {
   assert(httpconn_);
 
   auto nconsumed = nghttp3_conn_read_stream2(
@@ -318,14 +319,14 @@ int Http3Upstream::recv_stream_data(uint32_t flags, int64_t stream_id,
       &last_error_,
       nghttp3_err_infer_quic_app_error_code(static_cast<int>(nconsumed)),
       nullptr, 0);
-    return -1;
+    return std::unexpected{Error::HTTP3};
   }
 
   ngtcp2_conn_extend_max_stream_offset(conn_, stream_id,
                                        as_unsigned(nconsumed));
   ngtcp2_conn_extend_max_offset(conn_, as_unsigned(nconsumed));
 
-  return 0;
+  return {};
 }
 
 namespace {
@@ -338,7 +339,7 @@ int stream_close(ngtcp2_conn *conn, uint32_t flags, int64_t stream_id,
     app_error_code = NGHTTP3_H3_NO_ERROR;
   }
 
-  if (upstream->stream_close(stream_id, app_error_code) != 0) {
+  if (!upstream->stream_close(stream_id, app_error_code)) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
 
@@ -346,9 +347,10 @@ int stream_close(ngtcp2_conn *conn, uint32_t flags, int64_t stream_id,
 }
 } // namespace
 
-int Http3Upstream::stream_close(int64_t stream_id, uint64_t app_error_code) {
+std::expected<void, Error>
+Http3Upstream::stream_close(int64_t stream_id, uint64_t app_error_code) {
   if (!httpconn_) {
-    return 0;
+    return {};
   }
 
   auto rv = nghttp3_conn_close_stream(httpconn_, stream_id, app_error_code);
@@ -364,10 +366,10 @@ int Http3Upstream::stream_close(int64_t stream_id, uint64_t app_error_code) {
     Log{ERROR, this} << "nghttp3_conn_close_stream: " << nghttp3_strerror(rv);
     ngtcp2_ccerr_set_application_error(
       &last_error_, nghttp3_err_infer_quic_app_error_code(rv), nullptr, 0);
-    return -1;
+    return std::unexpected{Error::HTTP3};
   }
 
-  return 0;
+  return {};
 }
 
 namespace {
@@ -376,7 +378,7 @@ int acked_stream_data_offset(ngtcp2_conn *conn, int64_t stream_id,
                              void *stream_user_data) {
   auto upstream = static_cast<Http3Upstream *>(user_data);
 
-  if (upstream->acked_stream_data_offset(stream_id, datalen) != 0) {
+  if (!upstream->acked_stream_data_offset(stream_id, datalen)) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
 
@@ -384,19 +386,19 @@ int acked_stream_data_offset(ngtcp2_conn *conn, int64_t stream_id,
 }
 } // namespace
 
-int Http3Upstream::acked_stream_data_offset(int64_t stream_id,
-                                            uint64_t datalen) {
+std::expected<void, Error>
+Http3Upstream::acked_stream_data_offset(int64_t stream_id, uint64_t datalen) {
   if (!httpconn_) {
-    return 0;
+    return {};
   }
 
   auto rv = nghttp3_conn_add_ack_offset(httpconn_, stream_id, datalen);
   if (rv != 0) {
     Log{ERROR, this} << "nghttp3_conn_add_ack_offset: " << nghttp3_strerror(rv);
-    return -1;
+    return std::unexpected{Error::HTTP3};
   }
 
-  return 0;
+  return {};
 }
 
 namespace {
@@ -405,7 +407,7 @@ int extend_max_stream_data(ngtcp2_conn *conn, int64_t stream_id,
                            void *stream_user_data) {
   auto upstream = static_cast<Http3Upstream *>(user_data);
 
-  if (upstream->extend_max_stream_data(stream_id) != 0) {
+  if (!upstream->extend_max_stream_data(stream_id)) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
 
@@ -413,18 +415,19 @@ int extend_max_stream_data(ngtcp2_conn *conn, int64_t stream_id,
 }
 } // namespace
 
-int Http3Upstream::extend_max_stream_data(int64_t stream_id) {
+std::expected<void, Error>
+Http3Upstream::extend_max_stream_data(int64_t stream_id) {
   if (!httpconn_) {
-    return 0;
+    return {};
   }
 
   auto rv = nghttp3_conn_unblock_stream(httpconn_, stream_id);
   if (rv != 0) {
     Log{ERROR, this} << "nghttp3_conn_unblock_stream: " << nghttp3_strerror(rv);
-    return -1;
+    return std::unexpected{Error::HTTP3};
   }
 
-  return 0;
+  return {};
 }
 
 namespace {
@@ -448,7 +451,7 @@ int stream_reset(ngtcp2_conn *conn, int64_t stream_id, uint64_t final_size,
                  void *stream_user_data) {
   auto upstream = static_cast<Http3Upstream *>(user_data);
 
-  if (upstream->http_shutdown_stream_read(stream_id) != 0) {
+  if (!upstream->http_shutdown_stream_read(stream_id)) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
 
@@ -456,19 +459,20 @@ int stream_reset(ngtcp2_conn *conn, int64_t stream_id, uint64_t final_size,
 }
 } // namespace
 
-int Http3Upstream::http_shutdown_stream_read(int64_t stream_id) {
+std::expected<void, Error>
+Http3Upstream::http_shutdown_stream_read(int64_t stream_id) {
   if (!httpconn_) {
-    return 0;
+    return {};
   }
 
   auto rv = nghttp3_conn_shutdown_stream_read(httpconn_, stream_id);
   if (rv != 0) {
     Log{ERROR, this} << "nghttp3_conn_shutdown_stream_read: "
                      << nghttp3_strerror(rv);
-    return -1;
+    return std::unexpected{Error::HTTP3};
   }
 
-  return 0;
+  return {};
 }
 
 namespace {
@@ -477,7 +481,7 @@ int stream_stop_sending(ngtcp2_conn *conn, int64_t stream_id,
                         void *stream_user_data) {
   auto upstream = static_cast<Http3Upstream *>(user_data);
 
-  if (upstream->http_shutdown_stream_read(stream_id) != 0) {
+  if (!upstream->http_shutdown_stream_read(stream_id)) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
 
@@ -489,7 +493,7 @@ namespace {
 int handshake_completed(ngtcp2_conn *conn, void *user_data) {
   auto upstream = static_cast<Http3Upstream *>(user_data);
 
-  if (upstream->handshake_completed() != 0) {
+  if (!upstream->handshake_completed()) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
 
@@ -497,22 +501,18 @@ int handshake_completed(ngtcp2_conn *conn, void *user_data) {
 }
 } // namespace
 
-int Http3Upstream::handshake_completed() {
+std::expected<void, Error> Http3Upstream::handshake_completed() {
   handler_->set_alpn_from_conn();
 
   auto alpn = handler_->get_alpn();
   if (alpn.empty()) {
     Log{ERROR, this} << "NO ALPN was negotiated";
-    return -1;
+    return std::unexpected{Error::ALPN};
   }
 
   auto path = ngtcp2_conn_get_path(conn_);
 
-  if (!send_new_token(&path->remote)) {
-    return -1;
-  }
-
-  return 0;
+  return send_new_token(&path->remote);
 }
 
 namespace {

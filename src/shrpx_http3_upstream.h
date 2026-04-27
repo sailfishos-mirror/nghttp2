@@ -131,11 +131,16 @@ public:
 
   std::expected<void, Error> setup_httpconn();
   void add_pending_downstream(std::unique_ptr<Downstream> downstream);
-  int recv_stream_data(uint32_t flags, int64_t stream_id,
-                       std::span<const uint8_t> data);
-  int acked_stream_data_offset(int64_t stream_id, uint64_t datalen);
-  int extend_max_stream_data(int64_t stream_id);
+  std::expected<void, Error> recv_stream_data(uint32_t flags, int64_t stream_id,
+                                              std::span<const uint8_t> data);
+  std::expected<void, Error> acked_stream_data_offset(int64_t stream_id,
+                                                      uint64_t datalen);
+  std::expected<void, Error> extend_max_stream_data(int64_t stream_id);
   void extend_max_remote_streams_bidi(uint64_t max_streams);
+  std::expected<void, Error> stream_close(int64_t stream_id,
+                                          uint64_t app_error_code);
+  std::expected<void, Error> http_shutdown_stream_read(int64_t stream_id);
+  std::expected<void, Error> handshake_completed();
   std::expected<void, Error> error_reply(Downstream *downstream,
                                          unsigned int status_code);
   void http_begin_request_headers(int64_t stream_id);
@@ -151,15 +156,12 @@ public:
   int http_stream_close(Downstream *downstream, uint64_t app_error_code);
   void consume(int64_t stream_id, size_t nconsumed);
   void remove_downstream(Downstream *downstream);
-  int stream_close(int64_t stream_id, uint64_t app_error_code);
   void log_response_headers(Downstream *downstream,
                             const std::vector<nghttp3_nv> &nva) const;
   int http_acked_stream_data(Downstream *downstream, uint64_t datalen);
-  int http_shutdown_stream_read(int64_t stream_id);
   int http_reset_stream(int64_t stream_id, uint64_t app_error_code);
   int http_stop_sending(int64_t stream_id, uint64_t app_error_code);
   int http_recv_data(Downstream *downstream, std::span<const uint8_t> data);
-  int handshake_completed();
   std::expected<void, Error> check_shutdown();
   std::expected<void, Error> start_graceful_shutdown();
   std::expected<void, Error> submit_goaway();
