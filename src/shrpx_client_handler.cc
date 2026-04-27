@@ -340,11 +340,7 @@ ClientHandler::read_quic(const UpstreamAddr *faddr, const Address &remote_addr,
 
   auto upstream = static_cast<Http3Upstream *>(upstream_.get());
 
-  if (upstream->on_read(faddr, remote_addr, local_addr, pi, data) != 0) {
-    return std::unexpected{Error::INTERNAL};
-  }
-
-  return {};
+  return upstream->on_read(faddr, remote_addr, local_addr, pi, data);
 }
 
 std::expected<void, Error> ClientHandler::write_quic() {

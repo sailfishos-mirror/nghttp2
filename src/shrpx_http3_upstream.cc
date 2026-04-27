@@ -53,7 +53,7 @@ namespace {
 void timeoutcb(struct ev_loop *loop, ev_timer *w, int revents) {
   auto upstream = static_cast<Http3Upstream *>(w->data);
 
-  if (upstream->handle_expiry() != 0) {
+  if (!upstream->handle_expiry()) {
     goto fail;
   }
 
@@ -777,8 +777,8 @@ std::expected<void, Error> Http3Upstream::on_write() {
 
   handler_->get_connection()->wlimit.stopw();
 
-  if (write_streams() != 0) {
-    return std::unexpected{Error::INTERNAL};
+  if (auto rv = write_streams(); !rv) {
+    return rv;
   }
 
   if (httpconn_ && nghttp3_conn_is_drained(httpconn_)) {
@@ -890,7 +890,7 @@ ngtcp2_ssize Http3Upstream::write_pkt(ngtcp2_path *path, ngtcp2_pkt_info *pi,
   }
 }
 
-int Http3Upstream::write_streams() {
+std::expected<void, Error> Http3Upstream::write_streams() {
   ngtcp2_path_storage ps;
   ngtcp2_pkt_info pi;
   auto txbuf = std::span{txbuf_};
@@ -906,12 +906,12 @@ int Http3Upstream::write_streams() {
   }
 
   if (nwrite == 0) {
-    return 0;
+    return {};
   }
 
   send_packet(ps.path, pi, txbuf.first(static_cast<size_t>(nwrite)), gso_size);
 
-  return 0;
+  return {};
 }
 
 void Http3Upstream::send_packet(const ngtcp2_path &path,
@@ -1719,10 +1719,10 @@ bool Http3Upstream::push_enabled() const { return false; }
 void Http3Upstream::cancel_premature_downstream(
   Downstream *promised_downstream) {}
 
-int Http3Upstream::on_read(const UpstreamAddr *faddr,
-                           const Address &remote_addr,
-                           const Address &local_addr, const ngtcp2_pkt_info &pi,
-                           std::span<const uint8_t> data) {
+std::expected<void, Error>
+Http3Upstream::on_read(const UpstreamAddr *faddr, const Address &remote_addr,
+                       const Address &local_addr, const ngtcp2_pkt_info &pi,
+                       std::span<const uint8_t> data) {
   int rv;
 
   auto path = ngtcp2_path{
@@ -1736,7 +1736,7 @@ int Http3Upstream::on_read(const UpstreamAddr *faddr,
   if (rv != 0) {
     switch (rv) {
     case NGTCP2_ERR_DRAINING:
-      return -1;
+      return std::unexpected{Error::QUIC};
     case NGTCP2_ERR_RETRY: {
       auto worker = handler_->get_worker();
       auto quic_conn_handler = worker->get_quic_connection_handler();
@@ -1753,7 +1753,7 @@ int Http3Upstream::on_read(const UpstreamAddr *faddr,
       rv = ngtcp2_pkt_decode_version_cid(&vc, data.data(), data.size(),
                                          SHRPX_QUIC_SCIDLEN);
       if (rv != 0) {
-        return -1;
+        return std::unexpected{Error::QUIC};
       }
 
       // Overwrite error if any is set
@@ -1763,7 +1763,7 @@ int Http3Upstream::on_read(const UpstreamAddr *faddr,
         handler_->get_upstream_addr(), vc.version, {vc.dcid, vc.dcidlen},
         {vc.scid, vc.scidlen}, remote_addr, local_addr, data.size() * 3);
 
-      return -1;
+      return std::unexpected{Error::QUIC};
     }
     case NGTCP2_ERR_CRYPTO:
       if (!last_error_.error_code) {
@@ -1775,7 +1775,7 @@ int Http3Upstream::on_read(const UpstreamAddr *faddr,
       // Overwrite error if any is set
       ngtcp2_ccerr_set_liberr(&last_error_, rv, nullptr, 0);
 
-      return -1;
+      return std::unexpected{Error::QUIC};
     default:
       if (!last_error_.error_code) {
         ngtcp2_ccerr_set_liberr(&last_error_, rv, nullptr, 0);
@@ -1787,7 +1787,7 @@ int Http3Upstream::on_read(const UpstreamAddr *faddr,
     return handle_error();
   }
 
-  return 0;
+  return {};
 }
 
 std::pair<std::span<const uint8_t>, int>
@@ -1902,16 +1902,17 @@ void Http3Upstream::signal_write_upstream_addr(const UpstreamAddr *faddr) {
   conn->wlimit.startw();
 }
 
-int Http3Upstream::handle_error() {
+std::expected<void, Error> Http3Upstream::handle_error() {
   if (ngtcp2_conn_in_closing_period(conn_) ||
       ngtcp2_conn_in_draining_period(conn_)) {
-    return -1;
+    return std::unexpected{Error::DONE};
   }
 
   return send_connection_close(last_error_);
 }
 
-int Http3Upstream::send_connection_close(const ngtcp2_ccerr &ccerr) {
+std::expected<void, Error>
+Http3Upstream::send_connection_close(const ngtcp2_ccerr &ccerr) {
   ngtcp2_path_storage ps;
   ngtcp2_pkt_info pi;
 
@@ -1927,11 +1928,11 @@ int Http3Upstream::send_connection_close(const ngtcp2_ccerr &ccerr) {
                        << ngtcp2_strerror(static_cast<int>(nwrite));
     }
 
-    return -1;
+    return std::unexpected{Error::QUIC};
   }
 
   if (nwrite == 0) {
-    return -1;
+    return std::unexpected{Error::DONE};
   }
 
   conn_closelen_ = as_unsigned(nwrite);
@@ -1945,10 +1946,10 @@ int Http3Upstream::send_connection_close(const ngtcp2_ccerr &ccerr) {
               ps.path.local.addrlen, pi, {conn_close_.get(), conn_closelen_},
               conn_closelen_);
 
-  return -1;
+  return std::unexpected{Error::DONE};
 }
 
-int Http3Upstream::handle_expiry() {
+std::expected<void, Error> Http3Upstream::handle_expiry() {
   int rv;
 
   auto ts = quic_timestamp();
@@ -1964,7 +1965,7 @@ int Http3Upstream::handle_expiry() {
     return handle_error();
   }
 
-  return 0;
+  return {};
 }
 
 void Http3Upstream::reset_timer() {

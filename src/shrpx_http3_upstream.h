@@ -112,18 +112,20 @@ public:
            const ngtcp2_cid *odcid, std::span<const uint8_t> token,
            ngtcp2_token_type token_type);
 
-  int on_read(const UpstreamAddr *faddr, const Address &remote_addr,
-              const Address &local_addr, const ngtcp2_pkt_info &pi,
-              std::span<const uint8_t> data);
+  std::expected<void, Error> on_read(const UpstreamAddr *faddr,
+                                     const Address &remote_addr,
+                                     const Address &local_addr,
+                                     const ngtcp2_pkt_info &pi,
+                                     std::span<const uint8_t> data);
 
-  int write_streams();
+  std::expected<void, Error> write_streams();
   ngtcp2_ssize write_pkt(ngtcp2_path *path, ngtcp2_pkt_info *pi, uint8_t *dest,
                          size_t destlen, ngtcp2_tstamp ts);
 
-  int handle_error();
-  int send_connection_close(const ngtcp2_ccerr &ccerr);
+  std::expected<void, Error> handle_error();
+  std::expected<void, Error> send_connection_close(const ngtcp2_ccerr &ccerr);
 
-  int handle_expiry();
+  std::expected<void, Error> handle_expiry();
   void reset_timer();
 
   int setup_httpconn();
