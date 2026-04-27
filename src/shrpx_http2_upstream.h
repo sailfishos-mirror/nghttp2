@@ -113,9 +113,8 @@ public:
 
   bool get_flow_control() const;
   // Perform HTTP/2 upgrade from |upstream|. On success, this object
-  // takes ownership of the |upstream|. This function returns 0 if it
-  // succeeds, or -1.
-  int upgrade_upstream(HttpsUpstream *upstream);
+  // takes ownership of the |upstream|.
+  std::expected<void, Error> upgrade_upstream(HttpsUpstream *upstream);
   void start_settings_timer();
   void stop_settings_timer();
   std::expected<void, Error> consume(int32_t stream_id, size_t len);

@@ -103,7 +103,8 @@ int on_stream_close_callback(nghttp2_session *session, int32_t stream_id,
 }
 } // namespace
 
-int Http2Upstream::upgrade_upstream(HttpsUpstream *http) {
+std::expected<void, Error>
+Http2Upstream::upgrade_upstream(HttpsUpstream *http) {
   int rv;
 
   auto &balloc = http->get_downstream()->get_block_allocator();
@@ -121,7 +122,7 @@ int Http2Upstream::upgrade_upstream(HttpsUpstream *http) {
       Log{INFO, this} << "nghttp2_session_upgrade() returned error: "
                       << nghttp2_strerror(rv);
     }
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
   pre_upstream_.reset(http);
   auto downstream = http->pop_downstream();
@@ -143,7 +144,7 @@ int Http2Upstream::upgrade_upstream(HttpsUpstream *http) {
     Log{INFO, this} << "Connection upgraded to HTTP/2";
   }
 
-  return 0;
+  return {};
 }
 
 void Http2Upstream::start_settings_timer() {
