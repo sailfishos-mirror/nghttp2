@@ -610,7 +610,7 @@ int htp_msg_completecb(llhttp_t *htp) {
 
   if (handler->get_http2_upgrade_allowed() &&
       downstream->get_http2_upgrade_request() &&
-      handler->perform_http2_upgrade(upstream) != 0) {
+      !handler->perform_http2_upgrade(upstream)) {
     if (log_enabled(INFO)) {
       Log{INFO, upstream} << "HTTP Upgrade to HTTP/2 failed";
     }

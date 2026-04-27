@@ -125,10 +125,9 @@ public:
   // Call this function when HTTP/2 connection header is received at
   // the start of the connection.
   void direct_http2_upgrade();
-  // Performs HTTP/2 Upgrade from the connection managed by
-  // |http|. If this function fails, the connection must be
-  // terminated. This function returns 0 if it succeeds, or -1.
-  int perform_http2_upgrade(HttpsUpstream *http);
+  // Performs HTTP/2 Upgrade from the connection managed by |http|. If
+  // this function fails, the connection must be terminated.
+  std::expected<void, Error> perform_http2_upgrade(HttpsUpstream *http);
   bool get_http2_upgrade_allowed() const;
   // Returns upstream scheme, either "http" or "https"
   std::string_view get_upstream_scheme() const;

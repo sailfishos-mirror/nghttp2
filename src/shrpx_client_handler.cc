@@ -1136,7 +1136,8 @@ void ClientHandler::direct_http2_upgrade() {
   write_ = &ClientHandler::write_clear;
 }
 
-int ClientHandler::perform_http2_upgrade(HttpsUpstream *http) {
+std::expected<void, Error>
+ClientHandler::perform_http2_upgrade(HttpsUpstream *http) {
   auto upstream = std::make_unique<Http2Upstream>(this);
 
   auto output = upstream->get_response_buf();
@@ -1150,7 +1151,7 @@ int ClientHandler::perform_http2_upgrade(HttpsUpstream *http) {
   auto input = downstream->get_response_buf();
 
   if (upstream->upgrade_upstream(http) != 0) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
   // http pointer is now owned by upstream.
   upstream_.release();
@@ -1172,7 +1173,7 @@ int ClientHandler::perform_http2_upgrade(HttpsUpstream *http) {
   upstream_ = std::move(upstream);
 
   signal_write();
-  return 0;
+  return {};
 }
 
 bool ClientHandler::get_http2_upgrade_allowed() const { return !conn_.tls.ssl; }
