@@ -84,7 +84,7 @@ void prepare_cb(struct ev_loop *loop, ev_prepare *w, int revent) {
   auto upstream = static_cast<Http3Upstream *>(w->data);
   auto handler = upstream->get_client_handler();
 
-  if (upstream->check_shutdown() != 0) {
+  if (!upstream->check_shutdown()) {
     delete handler;
   }
 }
@@ -2784,11 +2784,11 @@ void Http3Upstream::log_response_headers(
                   << ss;
 }
 
-int Http3Upstream::check_shutdown() {
+std::expected<void, Error> Http3Upstream::check_shutdown() {
   auto worker = handler_->get_worker();
 
   if (!worker->get_graceful_shutdown()) {
-    return 0;
+    return {};
   }
 
   ev_prepare_stop(handler_->get_loop(), &prep_);
@@ -2796,22 +2796,22 @@ int Http3Upstream::check_shutdown() {
   return start_graceful_shutdown();
 }
 
-int Http3Upstream::start_graceful_shutdown() {
+std::expected<void, Error> Http3Upstream::start_graceful_shutdown() {
   int rv;
 
   if (ev_is_active(&shutdown_timer_)) {
-    return 0;
+    return {};
   }
 
   if (!httpconn_) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   rv = nghttp3_conn_submit_shutdown_notice(httpconn_);
   if (rv != 0) {
     Log{FATAL, this} << "nghttp3_conn_submit_shutdown_notice: "
                      << nghttp3_strerror(rv);
-    return -1;
+    return std::unexpected{Error::HTTP3};
   }
 
   handler_->signal_write();
@@ -2822,7 +2822,7 @@ int Http3Upstream::start_graceful_shutdown() {
                0.);
   ev_timer_start(handler_->get_loop(), &shutdown_timer_);
 
-  return 0;
+  return {};
 }
 
 int Http3Upstream::submit_goaway() {

@@ -160,8 +160,8 @@ public:
   int http_stop_sending(int64_t stream_id, uint64_t app_error_code);
   int http_recv_data(Downstream *downstream, std::span<const uint8_t> data);
   int handshake_completed();
-  int check_shutdown();
-  int start_graceful_shutdown();
+  std::expected<void, Error> check_shutdown();
+  std::expected<void, Error> start_graceful_shutdown();
   int submit_goaway();
   std::pair<std::span<const uint8_t>, int>
   send_packet(const UpstreamAddr *faddr, const sockaddr *remote_sa,
