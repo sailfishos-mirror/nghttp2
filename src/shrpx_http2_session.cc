@@ -1069,8 +1069,6 @@ int on_begin_headers_callback(nghttp2_session *session,
 namespace {
 int on_response_headers(Http2Session *http2session, Downstream *downstream,
                         nghttp2_session *session, const nghttp2_frame *frame) {
-  int rv;
-
   auto upstream = downstream->get_upstream();
   auto handler = upstream->get_client_handler();
   const auto &req = downstream->request();
@@ -1117,11 +1115,9 @@ int on_response_headers(Http2Session *http2session, Downstream *downstream,
     }
 
     downstream->set_expect_final_response(true);
-    rv = upstream->on_downstream_header_complete(downstream);
-
-    // Now Dowstream's response headers are erased.
-
-    if (rv != 0) {
+    // After Upstream::on_downstream_header_complete, Dowstream's
+    // response headers are erased.
+    if (!upstream->on_downstream_header_complete(downstream)) {
       http2session->submit_rst_stream(frame->hd.stream_id,
                                       NGHTTP2_PROTOCOL_ERROR);
       downstream->set_response_state(DownstreamState::MSG_RESET);
@@ -1180,8 +1176,7 @@ int on_response_headers(Http2Session *http2session, Downstream *downstream,
     downstream->set_accesslog_written(true);
   }
 
-  rv = upstream->on_downstream_header_complete(downstream);
-  if (rv != 0) {
+  if (!upstream->on_downstream_header_complete(downstream)) {
     // Handling early return (in other words, response was hijacked by
     // mruby scripting).
     if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {

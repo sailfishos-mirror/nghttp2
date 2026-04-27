@@ -1199,7 +1199,8 @@ nghttp3_ssize downstream_read_data_callback(nghttp3_conn *conn,
 }
 } // namespace
 
-int Http3Upstream::on_downstream_header_complete(Downstream *downstream) {
+std::expected<void, Error>
+Http3Upstream::on_downstream_header_complete(Downstream *downstream) {
   int rv;
 
   const auto &req = downstream->request();
@@ -1231,14 +1232,14 @@ int Http3Upstream::on_downstream_header_complete(Downstream *downstream) {
 
       if (dmruby_ctx->run_on_response_proc(downstream) != 0) {
         if (error_reply(downstream, 500) != 0) {
-          return -1;
+          return std::unexpected{Error::INTERNAL};
         }
-        // Returning -1 will signal deletion of dconn.
-        return -1;
+        // Returning an error will signal deletion of dconn.
+        return std::unexpected{Error::INTERNAL};
       }
 
       if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
-        return -1;
+        return std::unexpected{Error::INTERNAL};
       }
     }
 
@@ -1247,14 +1248,14 @@ int Http3Upstream::on_downstream_header_complete(Downstream *downstream) {
 
     if (mruby_ctx->run_on_response_proc(downstream) != 0) {
       if (error_reply(downstream, 500) != 0) {
-        return -1;
+        return std::unexpected{Error::INTERNAL};
       }
-      // Returning -1 will signal deletion of dconn.
-      return -1;
+      // Returning an error will signal deletion of dconn.
+      return std::unexpected{Error::INTERNAL};
     }
 
     if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
-      return -1;
+      return std::unexpected{Error::INTERNAL};
     }
   }
 #endif // defined(HAVE_MRUBY)
@@ -1284,10 +1285,10 @@ int Http3Upstream::on_downstream_header_complete(Downstream *downstream) {
 
     if (rv != 0) {
       Log{FATAL, this} << "nghttp3_conn_submit_info() failed";
-      return -1;
+      return std::unexpected{Error::HTTP3};
     }
 
-    return 0;
+    return {};
   }
 
   auto striphd_flags =
@@ -1399,17 +1400,17 @@ int Http3Upstream::on_downstream_header_complete(Downstream *downstream) {
                                     nva.data(), nva.size(), data_readptr);
   if (rv != 0) {
     Log{FATAL, this} << "nghttp3_conn_submit_response() failed";
-    return -1;
+    return std::unexpected{Error::HTTP3};
   }
 
   if (data_readptr) {
     downstream->reset_upstream_wtimer();
   } else if (shutdown_stream_read(downstream->get_stream_id(),
                                   NGHTTP3_H3_NO_ERROR) != 0) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
-  return 0;
+  return {};
 }
 
 std::expected<void, Error>

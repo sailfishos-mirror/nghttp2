@@ -68,7 +68,8 @@ public:
                                               int events) override;
   ClientHandler *get_client_handler() const override;
 
-  int on_downstream_header_complete(Downstream *downstream) override;
+  std::expected<void, Error>
+  on_downstream_header_complete(Downstream *downstream) override;
   std::expected<void, Error> on_downstream_body(Downstream *downstream,
                                                 std::span<const uint8_t> data,
                                                 bool flush) override;

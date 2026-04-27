@@ -1119,7 +1119,8 @@ std::unique_ptr<Downstream> HttpsUpstream::pop_downstream() {
   return std::unique_ptr<Downstream>(downstream_.release());
 }
 
-int HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
+std::expected<void, Error>
+HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
   if (log_enabled(INFO)) {
     if (downstream->get_non_final_response()) {
       Log{INFO, downstream} << "HTTP non-final response header";
@@ -1137,7 +1138,7 @@ int HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
   if (downstream->get_non_final_response() &&
       !downstream->supports_non_final_response()) {
     resp.fs.clear_headers();
-    return 0;
+    return {};
   }
 
 #ifdef HAVE_MRUBY
@@ -1149,11 +1150,11 @@ int HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
 
       if (dmruby_ctx->run_on_response_proc(downstream) != 0) {
         error_reply(500);
-        return -1;
+        return std::unexpected{Error::INTERNAL};
       }
 
       if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
-        return -1;
+        return std::unexpected{Error::INTERNAL};
       }
     }
 
@@ -1162,11 +1163,11 @@ int HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
 
     if (mruby_ctx->run_on_response_proc(downstream) != 0) {
       error_reply(500);
-      return -1;
+      return std::unexpected{Error::INTERNAL};
     }
 
     if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
-      return -1;
+      return std::unexpected{Error::INTERNAL};
     }
   }
 #endif // defined(HAVE_MRUBY)
@@ -1208,7 +1209,7 @@ int HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
 
     resp.fs.clear_headers();
 
-    return 0;
+    return {};
   }
 
   auto build_flags =
@@ -1246,12 +1247,12 @@ int HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
       buf->append("Upgrade: websocket\r\nConnection: Upgrade\r\n"sv);
       auto key = req.fs.header(http2::HD_SEC_WEBSOCKET_KEY);
       if (!key || key->value.size() != base64::encode_length(16)) {
-        return -1;
+        return std::unexpected{Error::WEBSOCKET_HANDSHAKE};
       }
       std::array<uint8_t, base64::encode_length(20)> out;
       auto accept = http2::make_websocket_accept_token(out.data(), key->value);
       if (accept.empty()) {
-        return -1;
+        return std::unexpected{Error::WEBSOCKET_HANDSHAKE};
       }
       buf->append("Sec-WebSocket-Accept: "sv);
       buf->append(accept);
@@ -1343,7 +1344,7 @@ int HttpsUpstream::on_downstream_header_complete(Downstream *downstream) {
     log_response_headers(buf);
   }
 
-  return 0;
+  return {};
 }
 
 std::expected<void, Error>

@@ -896,8 +896,6 @@ int htp_hdrs_completecb(llhttp_t *htp) {
   auto handler = upstream->get_client_handler();
   const auto &req = downstream->request();
   auto &resp = downstream->response();
-  int rv;
-
   auto &balloc = downstream->get_block_allocator();
 
   for (auto &kv : resp.fs.headers()) {
@@ -969,9 +967,7 @@ int htp_hdrs_completecb(llhttp_t *htp) {
     // For non-final response code, we just call
     // on_downstream_header_complete() without changing response
     // state.
-    rv = upstream->on_downstream_header_complete(downstream);
-
-    if (rv != 0) {
+    if (!upstream->on_downstream_header_complete(downstream)) {
       return -1;
     }
 
@@ -1012,7 +1008,7 @@ int htp_hdrs_completecb(llhttp_t *htp) {
     downstream->set_accesslog_written(true);
   }
 
-  if (upstream->on_downstream_header_complete(downstream) != 0) {
+  if (!upstream->on_downstream_header_complete(downstream)) {
     return -1;
   }
 

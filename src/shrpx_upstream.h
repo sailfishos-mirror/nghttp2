@@ -66,7 +66,8 @@ public:
   downstream_error(DownstreamConnection *dconn, int events) = 0;
   virtual ClientHandler *get_client_handler() const = 0;
 
-  virtual int on_downstream_header_complete(Downstream *downstream) = 0;
+  virtual std::expected<void, Error>
+  on_downstream_header_complete(Downstream *downstream) = 0;
   virtual std::expected<void, Error>
   on_downstream_body(Downstream *downstream, std::span<const uint8_t> data,
                      bool flush) = 0;

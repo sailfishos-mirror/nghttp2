@@ -1636,7 +1636,8 @@ void Http2Upstream::remove_downstream(Downstream *downstream) {
 
 // WARNING: Never call directly or indirectly nghttp2_session_send or
 // nghttp2_session_recv. These calls may delete downstream.
-int Http2Upstream::on_downstream_header_complete(Downstream *downstream) {
+std::expected<void, Error>
+Http2Upstream::on_downstream_header_complete(Downstream *downstream) {
   int rv;
 
   const auto &req = downstream->request();
@@ -1668,14 +1669,14 @@ int Http2Upstream::on_downstream_header_complete(Downstream *downstream) {
 
       if (dmruby_ctx->run_on_response_proc(downstream) != 0) {
         if (error_reply(downstream, 500) != 0) {
-          return -1;
+          return std::unexpected{Error::INTERNAL};
         }
-        // Returning -1 will signal deletion of dconn.
-        return -1;
+        // Returning an error will signal deletion of dconn.
+        return std::unexpected{Error::INTERNAL};
       }
 
       if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
-        return -1;
+        return std::unexpected{Error::INTERNAL};
       }
     }
 
@@ -1684,14 +1685,14 @@ int Http2Upstream::on_downstream_header_complete(Downstream *downstream) {
 
     if (mruby_ctx->run_on_response_proc(downstream) != 0) {
       if (error_reply(downstream, 500) != 0) {
-        return -1;
+        return std::unexpected{Error::INTERNAL};
       }
-      // Returning -1 will signal deletion of dconn.
-      return -1;
+      // Returning an error will signal deletion of dconn.
+      return std::unexpected{Error::INTERNAL};
     }
 
     if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
-      return -1;
+      return std::unexpected{Error::INTERNAL};
     }
   }
 #endif // defined(HAVE_MRUBY)
@@ -1750,10 +1751,10 @@ int Http2Upstream::on_downstream_header_complete(Downstream *downstream) {
 
     if (rv != 0) {
       Log{FATAL, this} << "nghttp2_submit_headers() failed";
-      return -1;
+      return std::unexpected{Error::HTTP2};
     }
 
-    return 0;
+    return {};
   }
 
   auto striphd_flags =
@@ -1887,14 +1888,14 @@ int Http2Upstream::on_downstream_header_complete(Downstream *downstream) {
     nva.size(), data_prdptr);
   if (rv != 0) {
     Log{FATAL, this} << "nghttp2_submit_response2() failed";
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   if (data_prdptr) {
     downstream->reset_upstream_wtimer();
   }
 
-  return 0;
+  return {};
 }
 
 // WARNING: Never call directly or indirectly nghttp2_session_send or

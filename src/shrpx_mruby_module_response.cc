@@ -279,7 +279,6 @@ mrb_value response_send_info(mrb_state *mrb, mrb_value self) {
   auto data = static_cast<MRubyAssocData *>(mrb->ud);
   auto downstream = data->downstream;
   auto &resp = downstream->response();
-  int rv;
 
   if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
     mrb_raise(mrb, E_RUNTIME_ERROR, "response has already been committed");
@@ -350,8 +349,7 @@ mrb_value response_send_info(mrb_state *mrb, mrb_value self) {
 
   auto upstream = downstream->get_upstream();
 
-  rv = upstream->on_downstream_header_complete(downstream);
-  if (rv != 0) {
+  if (!upstream->on_downstream_header_complete(downstream)) {
     mrb_raise(mrb, E_RUNTIME_ERROR, "could not send non-final response");
   }
 
