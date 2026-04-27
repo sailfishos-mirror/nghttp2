@@ -1237,7 +1237,7 @@ std::expected<void, Error> HttpDownstreamConnection::read_clear() {
                             << llhttp_errno_name(htperr);
           }
 
-          return std::unexpected{Error::INTERNAL};
+          return std::unexpected{Error::HTTP1};
         }
       }
 
@@ -1371,7 +1371,7 @@ std::expected<void, Error> HttpDownstreamConnection::read_tls() {
                             << llhttp_errno_name(htperr);
           }
 
-          return std::unexpected{Error::INTERNAL};
+          return std::unexpected{Error::HTTP1};
         }
       }
 
@@ -1484,7 +1484,7 @@ HttpDownstreamConnection::process_input(std::span<const uint8_t> data) {
                       << llhttp_get_error_reason(&response_htp_);
     }
 
-    return std::unexpected{Error::INTERNAL};
+    return std::unexpected{Error::HTTP1};
   }
 
   if (downstream_->get_upgraded()) {
