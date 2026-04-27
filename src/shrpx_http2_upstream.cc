@@ -1958,31 +1958,33 @@ int Http2Upstream::resume_read(IOCtrlReason reason, Downstream *downstream,
   return 0;
 }
 
-int Http2Upstream::on_downstream_abort_request(Downstream *downstream,
-                                               unsigned int status_code) {
+std::expected<void, Error>
+Http2Upstream::on_downstream_abort_request(Downstream *downstream,
+                                           unsigned int status_code) {
   int rv;
 
   rv = error_reply(downstream, status_code);
 
   if (rv != 0) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   handler_->signal_write();
-  return 0;
+  return {};
 }
 
-int Http2Upstream::on_downstream_abort_request_with_https_redirect(
+std::expected<void, Error>
+Http2Upstream::on_downstream_abort_request_with_https_redirect(
   Downstream *downstream) {
   int rv;
 
   rv = redirect_to_https(downstream);
   if (rv != 0) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   handler_->signal_write();
-  return 0;
+  return {};
 }
 
 int Http2Upstream::redirect_to_https(Downstream *downstream) {
@@ -2142,14 +2144,9 @@ int Http2Upstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
   return 0;
 
 fail:
-  int rv;
-
-  if (err == Error::TLS_REQUIRED) {
-    rv = on_downstream_abort_request_with_https_redirect(downstream);
-  } else {
-    rv = on_downstream_abort_request(downstream, 502);
-  }
-  if (rv != 0) {
+  if (!(err == Error::TLS_REQUIRED
+          ? on_downstream_abort_request_with_https_redirect(downstream)
+          : on_downstream_abort_request(downstream, 502))) {
     rst_stream(downstream, NGHTTP2_INTERNAL_ERROR);
   }
   downstream->pop_downstream_connection();

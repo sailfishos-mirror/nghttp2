@@ -943,22 +943,24 @@ std::expected<void, Error> Http3Upstream::on_timeout(Downstream *downstream) {
   return {};
 }
 
-int Http3Upstream::on_downstream_abort_request(Downstream *downstream,
-                                               unsigned int status_code) {
+std::expected<void, Error>
+Http3Upstream::on_downstream_abort_request(Downstream *downstream,
+                                           unsigned int status_code) {
   int rv;
 
   rv = error_reply(downstream, status_code);
 
   if (rv != 0) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   handler_->signal_write();
 
-  return 0;
+  return {};
 }
 
-int Http3Upstream::on_downstream_abort_request_with_https_redirect(
+std::expected<void, Error>
+Http3Upstream::on_downstream_abort_request_with_https_redirect(
   Downstream *downstream) {
   assert(0);
   abort();
@@ -1586,7 +1588,7 @@ fail:
     abort();
   }
 
-  if (on_downstream_abort_request(downstream, 502) != 0) {
+  if (!on_downstream_abort_request(downstream, 502)) {
     shutdown_stream(downstream, NGHTTP3_H3_INTERNAL_ERROR);
   }
   downstream->pop_downstream_connection();

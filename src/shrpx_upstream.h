@@ -49,11 +49,12 @@ public:
   virtual std::expected<void, Error> on_timeout(Downstream *downstream) {
     return {};
   }
-  virtual int on_downstream_abort_request(Downstream *downstream,
-                                          unsigned int status_code) = 0;
+  virtual std::expected<void, Error>
+  on_downstream_abort_request(Downstream *downstream,
+                              unsigned int status_code) = 0;
   // Called when the current request is aborted without forwarding it
   // to backend, and it should be redirected to https URI.
-  virtual int
+  virtual std::expected<void, Error>
   on_downstream_abort_request_with_https_redirect(Downstream *downstream) = 0;
   virtual std::expected<void, Error>
   downstream_read(DownstreamConnection *dconn) = 0;

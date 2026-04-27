@@ -104,16 +104,11 @@ void retry_downstream_connection(Downstream *downstream,
     if (!maybe_dconn) {
       downstream->set_request_state(DownstreamState::CONNECT_FAIL);
 
-      int rv;
-
-      if (maybe_dconn.error() == Error::TLS_REQUIRED) {
-        rv =
-          upstream->on_downstream_abort_request_with_https_redirect(downstream);
-      } else {
-        rv = upstream->on_downstream_abort_request(downstream, status_code);
-      }
-
-      if (rv != 0) {
+      if (!(maybe_dconn.error() == Error::TLS_REQUIRED
+              ? upstream->on_downstream_abort_request_with_https_redirect(
+                  downstream)
+              : upstream->on_downstream_abort_request(downstream,
+                                                      status_code))) {
         delete handler;
       }
 

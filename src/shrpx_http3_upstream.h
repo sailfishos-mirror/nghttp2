@@ -53,9 +53,10 @@ public:
   std::expected<void, Error> on_read() override { return {}; }
   std::expected<void, Error> on_write() override;
   std::expected<void, Error> on_timeout(Downstream *downstream) override;
-  int on_downstream_abort_request(Downstream *downstream,
-                                  unsigned int status_code) override;
-  int on_downstream_abort_request_with_https_redirect(
+  std::expected<void, Error>
+  on_downstream_abort_request(Downstream *downstream,
+                              unsigned int status_code) override;
+  std::expected<void, Error> on_downstream_abort_request_with_https_redirect(
     Downstream *downstream) override;
   std::expected<void, Error>
   downstream_read(DownstreamConnection *dconn) override;
