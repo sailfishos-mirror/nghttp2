@@ -631,9 +631,9 @@ Http3Upstream::init(const UpstreamAddr *faddr, const Address &remote_addr,
   }
 
   if (!quicconf.upstream.qlog.dir.empty()) {
-    auto fd = open_qlog_file(quicconf.upstream.qlog.dir, scid);
-    if (fd != -1) {
-      qlog_fd_ = fd;
+    auto maybe_fd = open_qlog_file(quicconf.upstream.qlog.dir, scid);
+    if (maybe_fd) {
+      qlog_fd_ = *maybe_fd;
       settings.qlog_write = shrpx::qlog_write;
     }
   }
@@ -2812,8 +2812,9 @@ std::expected<void, Error> Http3Upstream::submit_goaway() {
   return {};
 }
 
-int Http3Upstream::open_qlog_file(std::string_view dir,
-                                  const ngtcp2_cid &scid) const {
+std::expected<int, Error>
+Http3Upstream::open_qlog_file(std::string_view dir,
+                              const ngtcp2_cid &scid) const {
   std::array<char, sizeof("20141115T125824.741+0900")> buf;
 
   auto path = std::string{dir};
@@ -2846,7 +2847,7 @@ int Http3Upstream::open_qlog_file(std::string_view dir,
     auto error = errno;
     Log{ERROR, this} << "Failed to open qlog file " << path
                      << ": errno=" << error;
-    return -1;
+    return std::unexpected{Error::IO};
   }
 
   return fd;

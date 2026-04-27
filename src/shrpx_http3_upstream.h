@@ -182,7 +182,8 @@ public:
                    std::span<const uint8_t> data, size_t gso_size);
 
   void qlog_write(const void *data, size_t datalen, bool fin);
-  int open_qlog_file(std::string_view dir, const ngtcp2_cid &scid) const;
+  std::expected<int, Error> open_qlog_file(std::string_view dir,
+                                           const ngtcp2_cid &scid) const;
 
   void on_send_blocked(const ngtcp2_path &path, const ngtcp2_pkt_info &pi,
                        std::span<const uint8_t> data, size_t gso_size);
