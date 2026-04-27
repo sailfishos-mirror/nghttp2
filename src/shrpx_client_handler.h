@@ -107,7 +107,7 @@ public:
   void reset_upstream_read_timeout(ev_tstamp t);
   void reset_upstream_write_timeout(ev_tstamp t);
 
-  int validate_next_proto();
+  std::expected<void, Error> validate_next_proto();
   std::string_view get_ipaddr() const;
   bool get_should_close_after_write() const;
   void set_should_close_after_write(bool f);

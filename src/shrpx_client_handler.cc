@@ -232,8 +232,8 @@ std::expected<void, Error> ClientHandler::tls_handshake() {
     Log{INFO, this} << "SSL/TLS handshake completed";
   }
 
-  if (validate_next_proto() != 0) {
-    return std::unexpected{Error::INTERNAL};
+  if (auto rv = validate_next_proto(); !rv) {
+    return rv;
   }
 
   read_ = &ClientHandler::read_tls;
@@ -611,7 +611,7 @@ void ClientHandler::repeat_read_timer() {
 
 void ClientHandler::stop_read_timer() { ev_timer_stop(conn_.loop, &conn_.rt); }
 
-int ClientHandler::validate_next_proto() {
+std::expected<void, Error> ClientHandler::validate_next_proto() {
   const unsigned char *next_proto = nullptr;
   unsigned int next_proto_len = 0;
 
@@ -640,7 +640,7 @@ int ClientHandler::validate_next_proto() {
     if (log_enabled(INFO)) {
       Log{INFO, this} << "The negotiated protocol is not supported: " << proto;
     }
-    return -1;
+    return std::unexpected{Error::ALPN};
   }
 
   if (util::check_h2_is_selected(proto)) {
@@ -654,11 +654,7 @@ int ClientHandler::validate_next_proto() {
     // At this point, input buffer is already filled with some bytes.
     // The read callback is not called until new data come. So consume
     // input buffer here.
-    if (!on_read()) {
-      return -1;
-    }
-
-    return 0;
+    return on_read();
   }
 
   if (proto == "http/1.1"sv) {
@@ -668,16 +664,12 @@ int ClientHandler::validate_next_proto() {
     // At this point, input buffer is already filled with some bytes.
     // The read callback is not called until new data come. So consume
     // input buffer here.
-    if (!on_read()) {
-      return -1;
-    }
-
-    return 0;
+    return on_read();
   }
   if (log_enabled(INFO)) {
     Log{INFO, this} << "The negotiated protocol is not supported";
   }
-  return -1;
+  return std::unexpected{Error::ALPN};
 }
 
 std::expected<void, Error> ClientHandler::do_read() { return read_(*this); }
