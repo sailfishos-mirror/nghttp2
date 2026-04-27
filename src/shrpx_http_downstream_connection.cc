@@ -190,7 +190,7 @@ void connectcb(struct ev_loop *loop, ev_io *w, int revents) {
   auto conn = static_cast<Connection *>(w->data);
   auto dconn = static_cast<HttpDownstreamConnection *>(conn->data);
   auto downstream = dconn->get_downstream();
-  if (dconn->connected() != 0) {
+  if (!dconn->connected()) {
     backend_retry(downstream);
     return;
   }
@@ -1512,7 +1512,7 @@ HttpDownstreamConnection::process_input(std::span<const uint8_t> data) {
   return {};
 }
 
-int HttpDownstreamConnection::connected() {
+std::expected<void, Error> HttpDownstreamConnection::connected() {
   auto &connect_blocker = addr_->connect_blocker;
 
   auto sock_error = util::get_socket_error(conn_.fd);
@@ -1525,7 +1525,7 @@ int HttpDownstreamConnection::connected() {
 
     downstream_failure(addr_, raddr_);
 
-    return -1;
+    return std::unexpected{Error::CONNECT_FAIL};
   }
 
   if (log_enabled(INFO)) {
@@ -1545,7 +1545,7 @@ int HttpDownstreamConnection::connected() {
     on_read_ = &HttpDownstreamConnection::tls_handshake;
     on_write_ = &HttpDownstreamConnection::tls_handshake;
 
-    return 0;
+    return {};
   }
 
   signal_write_ = &HttpDownstreamConnection::actual_signal_write;
@@ -1558,7 +1558,7 @@ int HttpDownstreamConnection::connected() {
   on_read_ = &HttpDownstreamConnection::read_clear;
   on_write_ = &HttpDownstreamConnection::write_first;
 
-  return 0;
+  return {};
 }
 
 std::expected<void, Error> HttpDownstreamConnection::on_read() {
