@@ -1192,7 +1192,7 @@ nghttp3_ssize downstream_read_data_callback(nghttp3_conn *conn,
   downstream->response_sent_body_length += nghttp3_vec_len(vec, iov.size());
 
   if ((*pflags & NGHTTP3_DATA_FLAG_EOF) &&
-      upstream->shutdown_stream_read(stream_id, NGHTTP3_H3_NO_ERROR) != 0) {
+      !upstream->shutdown_stream_read(stream_id, NGHTTP3_H3_NO_ERROR)) {
     return NGHTTP3_ERR_CALLBACK_FAILURE;
   }
 
@@ -1406,9 +1406,10 @@ Http3Upstream::on_downstream_header_complete(Downstream *downstream) {
 
   if (data_readptr) {
     downstream->reset_upstream_wtimer();
-  } else if (shutdown_stream_read(downstream->get_stream_id(),
-                                  NGHTTP3_H3_NO_ERROR) != 0) {
-    return std::unexpected{Error::INTERNAL};
+  } else if (auto rv = shutdown_stream_read(downstream->get_stream_id(),
+                                            NGHTTP3_H3_NO_ERROR);
+             !rv) {
+    return rv;
   }
 
   return {};
@@ -1690,12 +1691,7 @@ Http3Upstream::send_reply(Downstream *downstream,
     downstream->reset_upstream_wtimer();
   }
 
-  if (shutdown_stream_read(downstream->get_stream_id(), NGHTTP3_H3_NO_ERROR) !=
-      0) {
-    return std::unexpected{Error::INTERNAL};
-  }
-
-  return {};
+  return shutdown_stream_read(downstream->get_stream_id(), NGHTTP3_H3_NO_ERROR);
 }
 
 std::span<struct iovec>
@@ -2112,12 +2108,8 @@ std::expected<void, Error> Http3Upstream::http_recv_request_header(
 
     // just ignore if this is a trailer part.
     if (trailer) {
-      if (shutdown_stream_read(downstream->get_stream_id(),
-                               NGHTTP3_H3_NO_ERROR) != 0) {
-        return std::unexpected{Error::INTERNAL};
-      }
-
-      return {};
+      return shutdown_stream_read(downstream->get_stream_id(),
+                                  NGHTTP3_H3_NO_ERROR);
     }
 
     return error_reply(downstream, 431);
@@ -2687,16 +2679,12 @@ Http3Upstream::error_reply(Downstream *downstream, unsigned int status_code) {
 
   downstream->reset_upstream_wtimer();
 
-  if (shutdown_stream_read(downstream->get_stream_id(), NGHTTP3_H3_NO_ERROR) !=
-      0) {
-    return std::unexpected{Error::INTERNAL};
-  }
-
-  return {};
+  return shutdown_stream_read(downstream->get_stream_id(), NGHTTP3_H3_NO_ERROR);
 }
 
-int Http3Upstream::shutdown_stream(Downstream *downstream,
-                                   uint64_t app_error_code) {
+std::expected<void, Error>
+Http3Upstream::shutdown_stream(Downstream *downstream,
+                               uint64_t app_error_code) {
   auto stream_id = downstream->get_stream_id();
 
   if (log_enabled(INFO)) {
@@ -2708,23 +2696,24 @@ int Http3Upstream::shutdown_stream(Downstream *downstream,
   if (rv != 0) {
     Log{FATAL, this} << "ngtcp2_conn_shutdown_stream() failed: "
                      << ngtcp2_strerror(rv);
-    return -1;
+    return std::unexpected{Error::QUIC};
   }
 
-  return 0;
+  return {};
 }
 
-int Http3Upstream::shutdown_stream_read(int64_t stream_id,
-                                        uint64_t app_error_code) {
+std::expected<void, Error>
+Http3Upstream::shutdown_stream_read(int64_t stream_id,
+                                    uint64_t app_error_code) {
   auto rv =
     ngtcp2_conn_shutdown_stream_read(conn_, 0, stream_id, NGHTTP3_H3_NO_ERROR);
   if (ngtcp2_err_is_fatal(rv)) {
     Log{FATAL, this} << "ngtcp2_conn_shutdown_stream_read: "
                      << ngtcp2_strerror(rv);
-    return -1;
+    return std::unexpected{Error::QUIC};
   }
 
-  return 0;
+  return {};
 }
 
 void Http3Upstream::consume(int64_t stream_id, size_t nconsumed) {

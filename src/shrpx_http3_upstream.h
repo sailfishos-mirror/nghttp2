@@ -162,8 +162,10 @@ public:
                                             std::span<const uint8_t> data);
   void start_downstream(Downstream *downstream);
   void initiate_downstream(Downstream *downstream);
-  int shutdown_stream(Downstream *downstream, uint64_t app_error_code);
-  int shutdown_stream_read(int64_t stream_id, uint64_t app_error_code);
+  std::expected<void, Error> shutdown_stream(Downstream *downstream,
+                                             uint64_t app_error_code);
+  std::expected<void, Error> shutdown_stream_read(int64_t stream_id,
+                                                  uint64_t app_error_code);
   void consume(int64_t stream_id, size_t nconsumed);
   void remove_downstream(Downstream *downstream);
   void log_response_headers(Downstream *downstream,
