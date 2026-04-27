@@ -2084,7 +2084,8 @@ void Http2Upstream::on_handler_delete() {
   }
 }
 
-int Http2Upstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
+std::expected<void, Error>
+Http2Upstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
   if (downstream->get_dispatch_state() != DispatchState::ACTIVE) {
     // This is error condition when we failed push_request_headers()
     // in initiate_downstream().  Otherwise, we have
@@ -2093,14 +2094,14 @@ int Http2Upstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
     downstream->pop_downstream_connection();
     handler_->signal_write();
 
-    return 0;
+    return {};
   }
 
   if (!downstream->request_submission_ready()) {
     if (downstream->get_response_state() == DownstreamState::MSG_COMPLETE) {
       // We have got all response body already.  Send it off.
       downstream->pop_downstream_connection();
-      return 0;
+      return {};
     }
     // pushed stream is handled here
     rst_stream(downstream, NGHTTP2_INTERNAL_ERROR);
@@ -2108,7 +2109,7 @@ int Http2Upstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
 
     handler_->signal_write();
 
-    return 0;
+    return {};
   }
 
   downstream->pop_downstream_connection();
@@ -2143,7 +2144,7 @@ int Http2Upstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
     goto fail;
   }
 
-  return 0;
+  return {};
 
 fail:
   if (!(err == Error::TLS_REQUIRED
@@ -2155,7 +2156,7 @@ fail:
 
   handler_->signal_write();
 
-  return 0;
+  return {};
 }
 
 int Http2Upstream::prepare_push_promise(Downstream *downstream) {

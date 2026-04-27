@@ -82,7 +82,8 @@ public:
   on_downstream_body_complete(Downstream *downstream) override;
 
   void on_handler_delete() override;
-  int on_downstream_reset(Downstream *downstream, bool no_retry) override;
+  std::expected<void, Error> on_downstream_reset(Downstream *downstream,
+                                                 bool no_retry) override;
   int send_reply(Downstream *downstream,
                  std::span<const uint8_t> body) override;
   int initiate_push(Downstream *downstream, std::string_view uri) override;

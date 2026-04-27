@@ -1471,7 +1471,8 @@ void HttpsUpstream::on_handler_delete() {
   }
 }
 
-int HttpsUpstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
+std::expected<void, Error>
+HttpsUpstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
   std::unique_ptr<DownstreamConnection> dconn;
 
   assert(downstream == downstream_.get());
@@ -1482,17 +1483,17 @@ int HttpsUpstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
     switch (downstream_->get_response_state()) {
     case DownstreamState::MSG_COMPLETE:
       // We have got all response body already.  Send it off.
-      return 0;
+      return {};
     case DownstreamState::INITIAL:
-      if (!on_downstream_abort_request(downstream_.get(), 502)) {
-        return -1;
+      if (auto rv = on_downstream_abort_request(downstream_.get(), 502); !rv) {
+        return rv;
       }
-      return 0;
+      return {};
     default:
       break;
     }
     // Return error so that caller can delete handler
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   downstream_->add_retry();
@@ -1520,17 +1521,18 @@ int HttpsUpstream::on_downstream_reset(Downstream *downstream, bool no_retry) {
     goto fail;
   }
 
-  return 0;
+  return {};
 
 fail:
-  if (!(err == Error::TLS_REQUIRED
-          ? on_downstream_abort_request_with_https_redirect(downstream)
-          : on_downstream_abort_request(downstream_.get(), 502))) {
-    return -1;
+  if (auto rv = err == Error::TLS_REQUIRED
+                  ? on_downstream_abort_request_with_https_redirect(downstream)
+                  : on_downstream_abort_request(downstream_.get(), 502);
+      !rv) {
+    return rv;
   }
   downstream_->pop_downstream_connection();
 
-  return 0;
+  return {};
 }
 
 int HttpsUpstream::initiate_push(Downstream *downstream, std::string_view uri) {

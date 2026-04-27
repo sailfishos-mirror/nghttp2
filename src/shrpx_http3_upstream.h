@@ -77,7 +77,8 @@ public:
   on_downstream_body_complete(Downstream *downstream) override;
 
   void on_handler_delete() override;
-  int on_downstream_reset(Downstream *downstream, bool no_retry) override;
+  std::expected<void, Error> on_downstream_reset(Downstream *downstream,
+                                                 bool no_retry) override;
 
   void pause_read(IOCtrlReason reason) override;
   int resume_read(IOCtrlReason reason, Downstream *downstream,

@@ -284,7 +284,7 @@ void Http2Session::disconnect(bool hard) {
 
     // Failure is allowed only for HTTP/1 upstream where upstream is
     // not shared by multiple Downstreams.
-    if (upstream->on_downstream_reset(downstream, hard) != 0) {
+    if (!upstream->on_downstream_reset(downstream, hard)) {
       delete upstream->get_client_handler();
     }
 
@@ -1506,7 +1506,7 @@ int on_frame_not_send_callback(nghttp2_session *session,
     // Migrate to another downstream connection.
     auto upstream = downstream->get_upstream();
 
-    if (upstream->on_downstream_reset(downstream, false)) {
+    if (!upstream->on_downstream_reset(downstream, false)) {
       // This should be done for h1 upstream only.  Deleting
       // ClientHandler for h2 upstream may lead to crash.
       delete upstream->get_client_handler();
