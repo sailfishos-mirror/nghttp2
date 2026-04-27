@@ -862,7 +862,7 @@ void settings_timeout_cb(struct ev_loop *loop, ev_timer *w, int revents) {
   auto upstream = static_cast<Http2Upstream *>(w->data);
   auto handler = upstream->get_client_handler();
   Log{INFO, upstream} << "SETTINGS timeout";
-  if (upstream->terminate_session(NGHTTP2_SETTINGS_TIMEOUT) != 0) {
+  if (!upstream->terminate_session(NGHTTP2_SETTINGS_TIMEOUT)) {
     delete handler;
     return;
   }
@@ -1400,13 +1400,14 @@ std::expected<void, Error> Http2Upstream::rst_stream(Downstream *downstream,
   return {};
 }
 
-int Http2Upstream::terminate_session(uint32_t error_code) {
+std::expected<void, Error>
+Http2Upstream::terminate_session(uint32_t error_code) {
   int rv;
   rv = nghttp2_session_terminate_session(session_, error_code);
   if (rv != 0) {
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
-  return 0;
+  return {};
 }
 
 namespace {

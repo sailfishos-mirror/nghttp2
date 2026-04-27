@@ -73,7 +73,7 @@ public:
 
   std::expected<void, Error> rst_stream(Downstream *downstream,
                                         uint32_t error_code);
-  int terminate_session(uint32_t error_code);
+  std::expected<void, Error> terminate_session(uint32_t error_code);
   int error_reply(Downstream *downstream, unsigned int status_code);
 
   void pause_read(IOCtrlReason reason) override;
