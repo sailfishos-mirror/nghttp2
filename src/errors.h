@@ -110,6 +110,8 @@ enum class Error {
   WEBSOCKET_HANDSHAKE,
   // PROXY-protocol error.
   PROXY_PROTO,
+  // HTTP fields are too large.
+  HTTP_FIELD_TOO_LARGE,
 };
 
 } // namespace nghttp2
@@ -229,6 +231,9 @@ struct std::formatter<nghttp2::Error>
       break;
     case nghttp2::Error::PROXY_PROTO:
       s = "PROXY-protocol failure"sv;
+      break;
+    case nghttp2::Error::HTTP_FIELD_TOO_LARGE:
+      s = "HTTP fields are too large"sv;
       break;
     }
 
