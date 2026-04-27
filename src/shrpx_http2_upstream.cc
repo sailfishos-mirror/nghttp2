@@ -1718,7 +1718,7 @@ Http2Upstream::on_downstream_header_complete(Downstream *downstream) {
       resp.fs.header(http2::HD_LINK) &&
       (downstream->get_non_final_response() || resp.http_status == 200) &&
       (req.method == HTTP_GET || req.method == HTTP_POST)) {
-    if (prepare_push_promise(downstream) != 0) {
+    if (!prepare_push_promise(downstream)) {
       // Continue to send response even if push was failed.
     }
   }
@@ -2155,15 +2155,14 @@ fail:
   return {};
 }
 
-int Http2Upstream::prepare_push_promise(Downstream *downstream) {
-  int rv;
-
+std::expected<void, Error>
+Http2Upstream::prepare_push_promise(Downstream *downstream) {
   const auto &req = downstream->request();
   auto &resp = downstream->response();
 
   auto base = http2::get_pure_path_component(req.path);
   if (base.empty()) {
-    return 0;
+    return {};
   }
 
   auto &balloc = downstream->get_block_allocator();
@@ -2194,23 +2193,22 @@ int Http2Upstream::prepare_push_promise(Downstream *downstream) {
         continue;
       }
 
-      rv = submit_push_promise(push_comp.scheme, push_comp.authority,
-                               push_comp.path, downstream);
-      if (rv != 0) {
-        return -1;
+      if (auto rv = submit_push_promise(push_comp.scheme, push_comp.authority,
+                                        push_comp.path, downstream);
+          !rv) {
+        return rv;
       }
 
       resp.resource_pushed(push_comp.scheme, push_comp.authority,
                            push_comp.path);
     }
   }
-  return 0;
+  return {};
 }
 
-int Http2Upstream::submit_push_promise(std::string_view scheme,
-                                       std::string_view authority,
-                                       std::string_view path,
-                                       Downstream *downstream) {
+std::expected<void, Error> Http2Upstream::submit_push_promise(
+  std::string_view scheme, std::string_view authority, std::string_view path,
+  Downstream *downstream) {
   const auto &req = downstream->request();
 
   std::vector<nghttp2_nv> nva;
@@ -2253,9 +2251,9 @@ int Http2Upstream::submit_push_promise(std::string_view scheme,
                       << nghttp2_strerror(promised_stream_id);
     }
     if (nghttp2_is_fatal(promised_stream_id)) {
-      return -1;
+      return std::unexpected{Error::HTTP2};
     }
-    return 0;
+    return {};
   }
 
   if (log_enabled(INFO)) {
@@ -2264,7 +2262,7 @@ int Http2Upstream::submit_push_promise(std::string_view scheme,
                     << format_nva(nva);
   }
 
-  return 0;
+  return {};
 }
 
 bool Http2Upstream::push_enabled() const {
@@ -2277,8 +2275,6 @@ bool Http2Upstream::push_enabled() const {
 
 std::expected<void, Error> Http2Upstream::initiate_push(Downstream *downstream,
                                                         std::string_view uri) {
-  int rv;
-
   if (uri.empty() || !push_enabled() ||
       (downstream->get_stream_id() % 2) == 0) {
     return {};
@@ -2315,11 +2311,10 @@ std::expected<void, Error> Http2Upstream::initiate_push(Downstream *downstream,
     return {};
   }
 
-  rv = submit_push_promise(push_comp.scheme, push_comp.authority,
-                           push_comp.path, downstream);
-
-  if (rv != 0) {
-    return std::unexpected{Error::INTERNAL};
+  if (auto rv = submit_push_promise(push_comp.scheme, push_comp.authority,
+                                    push_comp.path, downstream);
+      !rv) {
+    return rv;
   }
 
   resp.resource_pushed(push_comp.scheme, push_comp.authority, push_comp.path);

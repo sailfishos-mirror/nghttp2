@@ -128,9 +128,11 @@ public:
   // Starts graceful shutdown period.
   void start_graceful_shutdown();
 
-  int prepare_push_promise(Downstream *downstream);
-  int submit_push_promise(std::string_view scheme, std::string_view authority,
-                          std::string_view path, Downstream *downstream);
+  std::expected<void, Error> prepare_push_promise(Downstream *downstream);
+  std::expected<void, Error> submit_push_promise(std::string_view scheme,
+                                                 std::string_view authority,
+                                                 std::string_view path,
+                                                 Downstream *downstream);
 
   // Called when new request has started.
   void on_start_request(const nghttp2_frame *frame);
