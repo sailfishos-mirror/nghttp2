@@ -1369,7 +1369,8 @@ HttpsUpstream::on_downstream_body(Downstream *downstream,
   return {};
 }
 
-int HttpsUpstream::on_downstream_body_complete(Downstream *downstream) {
+std::expected<void, Error>
+HttpsUpstream::on_downstream_body_complete(Downstream *downstream) {
   const auto &req = downstream->request();
   auto &resp = downstream->response();
 
@@ -1399,7 +1400,7 @@ int HttpsUpstream::on_downstream_body_complete(Downstream *downstream) {
     auto handler = get_client_handler();
     handler->set_should_close_after_write(true);
   }
-  return 0;
+  return {};
 }
 
 std::expected<void, Error>

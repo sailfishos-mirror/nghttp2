@@ -1219,9 +1219,7 @@ int on_frame_recv_callback(nghttp2_session *session, const nghttp2_frame *frame,
           DownstreamState::HEADER_COMPLETE) {
         downstream->set_response_state(DownstreamState::MSG_COMPLETE);
 
-        auto rv = upstream->on_downstream_body_complete(downstream);
-
-        if (rv != 0) {
+        if (!upstream->on_downstream_body_complete(downstream)) {
           downstream->set_response_state(DownstreamState::MSG_RESET);
         }
       }
@@ -1264,9 +1262,7 @@ int on_frame_recv_callback(nghttp2_session *session, const nghttp2_frame *frame,
 
         auto upstream = downstream->get_upstream();
 
-        rv = upstream->on_downstream_body_complete(downstream);
-
-        if (rv != 0) {
+        if (!upstream->on_downstream_body_complete(downstream)) {
           downstream->set_response_state(DownstreamState::MSG_RESET);
         }
       }

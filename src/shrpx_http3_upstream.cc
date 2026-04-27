@@ -1079,8 +1079,8 @@ Http3Upstream::downstream_eof(DownstreamConnection *dconn) {
     // downstream_read_data_callback to send RST_STREAM after pending
     // response body is sent. This is needed to ensure that RST_STREAM
     // is sent after all pending data are sent.
-    if (on_downstream_body_complete(downstream) != 0) {
-      return std::unexpected{Error::INTERNAL};
+    if (auto rv = on_downstream_body_complete(downstream); !rv) {
+      return rv;
     }
   } else if (downstream->get_response_state() !=
              DownstreamState::MSG_COMPLETE) {
@@ -1126,8 +1126,8 @@ Http3Upstream::downstream_error(DownstreamConnection *dconn, int events) {
   } else {
     if (downstream->get_response_state() == DownstreamState::HEADER_COMPLETE) {
       if (downstream->get_upgraded()) {
-        if (on_downstream_body_complete(downstream) != 0) {
-          return std::unexpected{Error::INTERNAL};
+        if (auto rv = on_downstream_body_complete(downstream); !rv) {
+          return rv;
         }
       } else {
         shutdown_stream(downstream, NGHTTP3_H3_INTERNAL_ERROR);
@@ -1428,7 +1428,8 @@ Http3Upstream::on_downstream_body(Downstream *downstream,
   return {};
 }
 
-int Http3Upstream::on_downstream_body_complete(Downstream *downstream) {
+std::expected<void, Error>
+Http3Upstream::on_downstream_body_complete(Downstream *downstream) {
   if (log_enabled(INFO)) {
     Log{INFO, downstream} << "HTTP response completed";
   }
@@ -1438,7 +1439,7 @@ int Http3Upstream::on_downstream_body_complete(Downstream *downstream) {
   if (!downstream->validate_response_recv_body_length()) {
     shutdown_stream(downstream, NGHTTP3_H3_GENERAL_PROTOCOL_ERROR);
     resp.connection_close = true;
-    return 0;
+    return {};
   }
 
   if (!downstream->get_upgraded()) {
@@ -1453,7 +1454,7 @@ int Http3Upstream::on_downstream_body_complete(Downstream *downstream) {
         if (rv != 0) {
           Log{FATAL, this} << "nghttp3_conn_submit_trailers() failed: "
                            << nghttp3_strerror(rv);
-          return -1;
+          return std::unexpected{Error::HTTP3};
         }
       }
     }
@@ -1462,7 +1463,7 @@ int Http3Upstream::on_downstream_body_complete(Downstream *downstream) {
   nghttp3_conn_resume_stream(httpconn_, downstream->get_stream_id());
   downstream->ensure_upstream_wtimer();
 
-  return 0;
+  return {};
 }
 
 void Http3Upstream::on_handler_delete() {

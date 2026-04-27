@@ -73,7 +73,8 @@ public:
   std::expected<void, Error> on_downstream_body(Downstream *downstream,
                                                 std::span<const uint8_t> data,
                                                 bool flush) override;
-  int on_downstream_body_complete(Downstream *downstream) override;
+  std::expected<void, Error>
+  on_downstream_body_complete(Downstream *downstream) override;
 
   void on_handler_delete() override;
   int on_downstream_reset(Downstream *downstream, bool no_retry) override;

@@ -1918,7 +1918,8 @@ Http2Upstream::on_downstream_body(Downstream *downstream,
 
 // WARNING: Never call directly or indirectly nghttp2_session_send or
 // nghttp2_session_recv. These calls may delete downstream.
-int Http2Upstream::on_downstream_body_complete(Downstream *downstream) {
+std::expected<void, Error>
+Http2Upstream::on_downstream_body_complete(Downstream *downstream) {
   if (log_enabled(INFO)) {
     Log{INFO, downstream} << "HTTP response completed";
   }
@@ -1928,14 +1929,14 @@ int Http2Upstream::on_downstream_body_complete(Downstream *downstream) {
   if (!downstream->validate_response_recv_body_length()) {
     rst_stream(downstream, NGHTTP2_PROTOCOL_ERROR);
     resp.connection_close = true;
-    return 0;
+    return {};
   }
 
   nghttp2_session_resume_data(
     session_, static_cast<int32_t>(downstream->get_stream_id()));
   downstream->ensure_upstream_wtimer();
 
-  return 0;
+  return {};
 }
 
 bool Http2Upstream::get_flow_control() const { return flow_control_; }

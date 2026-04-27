@@ -71,7 +71,8 @@ public:
   virtual std::expected<void, Error>
   on_downstream_body(Downstream *downstream, std::span<const uint8_t> data,
                      bool flush) = 0;
-  virtual int on_downstream_body_complete(Downstream *downstream) = 0;
+  virtual std::expected<void, Error>
+  on_downstream_body_complete(Downstream *downstream) = 0;
 
   virtual void on_handler_delete() = 0;
   // Called when downstream connection for |downstream| is reset.
