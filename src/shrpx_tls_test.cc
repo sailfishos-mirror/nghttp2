@@ -164,15 +164,8 @@ void test_shrpx_tls_cert_lookup_tree_add_ssl_ctx(void) {
   tls::CertLookupTree tree;
   std::vector<std::vector<SSL_CTX *>> indexed_ssl_ctx;
 
-  rv =
-    tls::cert_lookup_tree_add_ssl_ctx(&tree, indexed_ssl_ctx, nghttp2_ssl_ctx);
-
-  assert_int(0, ==, rv);
-
-  rv =
-    tls::cert_lookup_tree_add_ssl_ctx(&tree, indexed_ssl_ctx, examples_ssl_ctx);
-
-  assert_int(0, ==, rv);
+  tls::cert_lookup_tree_add_ssl_ctx(&tree, indexed_ssl_ctx, nghttp2_ssl_ctx);
+  tls::cert_lookup_tree_add_ssl_ctx(&tree, indexed_ssl_ctx, examples_ssl_ctx);
 
   constexpr auto badval = std::numeric_limits<size_t>::max();
 

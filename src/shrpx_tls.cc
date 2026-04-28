@@ -2116,7 +2116,7 @@ void CertLookupTree::dump() const {
   rev_wildcard_router_.dump();
 }
 
-int cert_lookup_tree_add_ssl_ctx(
+void cert_lookup_tree_add_ssl_ctx(
   CertLookupTree *lt, std::vector<std::vector<SSL_CTX *>> &indexed_ssl_ctx,
   SSL_CTX *ssl_ctx) {
   std::array<char, NI_MAXHOST> buf;
@@ -2183,13 +2183,13 @@ int cert_lookup_tree_add_ssl_ctx(
 
     // Don't bother CN if we have dNSName.
     if (dns_found) {
-      return 0;
+      return;
     }
   }
 
   auto maybe_cn = get_common_name(cert);
   if (!maybe_cn) {
-    return 0;
+    return;
   }
 
   auto cn = *maybe_cn;
@@ -2199,14 +2199,14 @@ int cert_lookup_tree_add_ssl_ctx(
 
   if (cn[cn.size() - 1] == '.') {
     if (cn.size() == 1) {
-      return 0;
+      return;
     }
 
     cn = std::string_view{cn.data(), cn.size() - 1};
   }
 
   if (cn.size() + 1 > buf.size()) {
-    return 0;
+    return;
   }
 
   auto end_buf = util::tolower(cn, std::ranges::begin(buf));
@@ -2214,7 +2214,7 @@ int cert_lookup_tree_add_ssl_ctx(
   auto maybe_idx = lt->add_cert(
     std::string_view{std::ranges::begin(buf), end_buf}, indexed_ssl_ctx.size());
   if (!maybe_idx) {
-    return 0;
+    return;
   }
 
   auto idx = *maybe_idx;
@@ -2225,8 +2225,6 @@ int cert_lookup_tree_add_ssl_ctx(
     assert(idx == indexed_ssl_ctx.size());
     indexed_ssl_ctx.emplace_back(std::vector<SSL_CTX *>{ssl_ctx});
   }
-
-  return 0;
 }
 
 bool in_proto_list(const std::vector<std::string_view> &protos,
@@ -2300,10 +2298,7 @@ setup_server_ssl_context(std::vector<SSL_CTX *> &all_ssl_ctx,
 
   assert(cert_tree);
 
-  if (cert_lookup_tree_add_ssl_ctx(cert_tree, indexed_ssl_ctx, ssl_ctx) == -1) {
-    Log{FATAL} << "Failed to add default certificate.";
-    DIE();
-  }
+  cert_lookup_tree_add_ssl_ctx(cert_tree, indexed_ssl_ctx, ssl_ctx);
 
   for (auto &c : tlsconf.subcerts) {
     auto ssl_ctx = create_ssl_context(c.private_key_file.data(),
@@ -2315,11 +2310,7 @@ setup_server_ssl_context(std::vector<SSL_CTX *> &all_ssl_ctx,
     );
     all_ssl_ctx.push_back(ssl_ctx);
 
-    if (cert_lookup_tree_add_ssl_ctx(cert_tree, indexed_ssl_ctx, ssl_ctx) ==
-        -1) {
-      Log{FATAL} << "Failed to add sub certificate.";
-      DIE();
-    }
+    cert_lookup_tree_add_ssl_ctx(cert_tree, indexed_ssl_ctx, ssl_ctx);
   }
 
   return ssl_ctx;
@@ -2355,10 +2346,7 @@ SSL_CTX *setup_quic_server_ssl_context(
 
   assert(cert_tree);
 
-  if (cert_lookup_tree_add_ssl_ctx(cert_tree, indexed_ssl_ctx, ssl_ctx) == -1) {
-    Log{FATAL} << "Failed to add default certificate.";
-    DIE();
-  }
+  cert_lookup_tree_add_ssl_ctx(cert_tree, indexed_ssl_ctx, ssl_ctx);
 
   for (auto &c : tlsconf.subcerts) {
     auto ssl_ctx = create_quic_ssl_context(c.private_key_file.data(),
@@ -2370,11 +2358,7 @@ SSL_CTX *setup_quic_server_ssl_context(
     );
     all_ssl_ctx.push_back(ssl_ctx);
 
-    if (cert_lookup_tree_add_ssl_ctx(cert_tree, indexed_ssl_ctx, ssl_ctx) ==
-        -1) {
-      Log{FATAL} << "Failed to add sub certificate.";
-      DIE();
-    }
+    cert_lookup_tree_add_ssl_ctx(cert_tree, indexed_ssl_ctx, ssl_ctx);
   }
 
   return ssl_ctx;

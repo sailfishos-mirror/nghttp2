@@ -193,8 +193,8 @@ private:
 // The subjectAltNames and commonName are considered as eligible
 // hostname.  If there is at least one dNSName in subjectAltNames,
 // commonName is not considered.  |ssl_ctx| is also added to
-// |indexed_ssl_ctx|.  This function returns 0 if it succeeds, or -1.
-int cert_lookup_tree_add_ssl_ctx(
+// |indexed_ssl_ctx|.
+void cert_lookup_tree_add_ssl_ctx(
   CertLookupTree *lt, std::vector<std::vector<SSL_CTX *>> &indexed_ssl_ctx,
   SSL_CTX *ssl_ctx);
 
