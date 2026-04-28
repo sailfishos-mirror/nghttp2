@@ -1654,8 +1654,9 @@ std::expected<SSL *, Error> create_ssl(SSL_CTX *ssl_ctx) {
   return ssl;
 }
 
-ClientHandler *accept_connection(Worker *worker, int fd, const sockaddr *addr,
-                                 socklen_t addrlen, const UpstreamAddr *faddr) {
+std::expected<std::unique_ptr<ClientHandler>, Error>
+accept_connection(Worker *worker, int fd, const sockaddr *addr,
+                  socklen_t addrlen, const UpstreamAddr *faddr) {
   std::array<char, NI_MAXHOST> host;
   std::array<char, NI_MAXSERV> service;
   int rv;
@@ -1669,7 +1670,7 @@ ClientHandler *accept_connection(Worker *worker, int fd, const sockaddr *addr,
     if (rv != 0) {
       Log{ERROR} << "getnameinfo() failed: " << gai_strerror(rv);
 
-      return nullptr;
+      return std::unexpected{Error::LIBC};
     }
 
     rv = util::make_socket_nodelay(fd);
@@ -1685,7 +1686,7 @@ ClientHandler *accept_connection(Worker *worker, int fd, const sockaddr *addr,
 
     auto maybe_ssl = create_ssl(ssl_ctx);
     if (!maybe_ssl) {
-      return nullptr;
+      return std::unexpected{maybe_ssl.error()};
     }
 
     ssl = *maybe_ssl;
@@ -1697,9 +1698,9 @@ ClientHandler *accept_connection(Worker *worker, int fd, const sockaddr *addr,
     }
   }
 
-  auto handler =
-    new ClientHandler(worker, fd, ssl, std::string_view{host.data()},
-                      std::string_view{service.data()}, addr->sa_family, faddr);
+  auto handler = std::make_unique<ClientHandler>(
+    worker, fd, ssl, std::string_view{host.data()},
+    std::string_view{service.data()}, addr->sa_family, faddr);
 
   auto config = get_config();
   auto &fwdconf = config->http.forwarded;

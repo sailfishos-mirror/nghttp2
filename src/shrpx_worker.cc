@@ -1697,8 +1697,8 @@ int Worker::handle_connection(int fd, const sockaddr *addr, socklen_t addrlen,
     return -1;
   }
 
-  auto client_handler = tls::accept_connection(this, fd, addr, addrlen, faddr);
-  if (!client_handler) {
+  auto maybe_handler = tls::accept_connection(this, fd, addr, addrlen, faddr);
+  if (!maybe_handler) {
     if (log_enabled(INFO)) {
       Log{ERROR, this} << "ClientHandler creation failed";
     }
@@ -1707,6 +1707,8 @@ int Worker::handle_connection(int fd, const sockaddr *addr, socklen_t addrlen,
 
     return -1;
   }
+
+  auto client_handler = maybe_handler->release();
 
   if (log_enabled(INFO)) {
     Log{INFO, this} << "CLIENT_HANDLER:" << client_handler << " created";

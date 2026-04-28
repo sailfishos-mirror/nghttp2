@@ -102,8 +102,9 @@ SSL_CTX *create_ssl_client_context(
   std::string_view cacert, std::string_view cert_file,
   std::string_view private_key_file);
 
-ClientHandler *accept_connection(Worker *worker, int fd, const sockaddr *addr,
-                                 socklen_t addrlen, const UpstreamAddr *faddr);
+std::expected<std::unique_ptr<ClientHandler>, Error>
+accept_connection(Worker *worker, int fd, const sockaddr *addr,
+                  socklen_t addrlen, const UpstreamAddr *faddr);
 
 // Check peer's certificate against given |address| and |host|.
 int check_cert(SSL *ssl, const Address *addr, std::string_view host);
