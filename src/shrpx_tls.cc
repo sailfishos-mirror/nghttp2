@@ -211,23 +211,23 @@ void select_ssl_ctx(SSL *ssl, std::string_view servername) {
   auto cert_tree = worker->get_cert_lookup_tree();
 #endif // !defined(ENABLE_HTTP3)
 
-  auto idx = cert_tree->lookup(hostname);
-  if (idx == -1) {
+  auto maybe_idx = cert_tree->lookup(hostname);
+  if (!maybe_idx) {
     return;
   }
+
+  auto idx = *maybe_idx;
 
   handler->set_tls_sni(hostname);
 
   auto conn_handler = worker->get_connection_handler();
 
 #ifdef ENABLE_HTTP3
-  const auto &ssl_ctx_list =
-    conn->proto == Proto::HTTP3
-      ? conn_handler->get_quic_indexed_ssl_ctx(as_unsigned(idx))
-      : conn_handler->get_indexed_ssl_ctx(as_unsigned(idx));
+  const auto &ssl_ctx_list = conn->proto == Proto::HTTP3
+                               ? conn_handler->get_quic_indexed_ssl_ctx(idx)
+                               : conn_handler->get_indexed_ssl_ctx(idx);
 #else  // !defined(ENABLE_HTTP3)
-  const auto &ssl_ctx_list =
-    conn_handler->get_indexed_ssl_ctx(as_unsigned(idx));
+  const auto &ssl_ctx_list = conn_handler->get_indexed_ssl_ctx(idx);
 #endif // !defined(ENABLE_HTTP3)
 
   assert(!ssl_ctx_list.empty());
@@ -245,11 +245,10 @@ void select_ssl_ctx(SSL *ssl, std::string_view servername) {
   auto num_sigalgs =
     SSL_get_sigalgs(ssl, 0, nullptr, nullptr, nullptr, nullptr, nullptr);
 
-  for (idx = 0; idx < num_sigalgs; ++idx) {
+  for (auto i = 0; i < num_sigalgs; ++i) {
     int signhash;
 
-    SSL_get_sigalgs(ssl, static_cast<int>(idx), nullptr, nullptr, &signhash,
-                    nullptr, nullptr);
+    SSL_get_sigalgs(ssl, i, nullptr, nullptr, &signhash, nullptr, nullptr);
     switch (signhash) {
     case NID_ecdsa_with_SHA256:
     case NID_ecdsa_with_SHA384:
@@ -1990,12 +1989,13 @@ std::expected<void, Error> check_cert(SSL *ssl, const DownstreamAddr *addr,
 
 CertLookupTree::CertLookupTree() {}
 
-ssize_t CertLookupTree::add_cert(std::string_view hostname, size_t idx) {
+std::expected<size_t, Error> CertLookupTree::add_cert(std::string_view hostname,
+                                                      size_t idx) {
   std::array<char, NI_MAXHOST> buf;
 
   // NI_MAXHOST includes terminal NULL byte
   if (hostname.empty() || hostname.size() + 1 > buf.size()) {
-    return -1;
+    return std::unexpected{Error::INVALID_ARGUMENT};
   }
 
   auto wildcard_it = std::ranges::find(hostname, '*');
@@ -2030,34 +2030,34 @@ ssize_t CertLookupTree::add_cert(std::string_view hostname, size_t idx) {
 
     for (auto &p : wpat->rev_prefix) {
       if (p.prefix == rev_prefix) {
-        return as_signed(p.idx);
+        return p.idx;
       }
     }
 
     wpat->rev_prefix.emplace_back(rev_prefix, idx);
 
-    return as_signed(idx);
+    return idx;
   }
 
-  return as_signed(router_.add_route(hostname, idx));
+  return router_.add_route(hostname, idx);
 }
 
-ssize_t CertLookupTree::lookup(std::string_view hostname) {
+std::expected<size_t, Error> CertLookupTree::lookup(std::string_view hostname) {
   std::array<char, NI_MAXHOST> buf;
 
   // NI_MAXHOST includes terminal NULL byte
   if (hostname.empty() || hostname.size() + 1 > buf.size()) {
-    return -1;
+    return std::unexpected{Error::INVALID_ARGUMENT};
   }
 
   // Always prefer exact match
   auto idx = router_.match(hostname);
   if (idx != -1) {
-    return idx;
+    return as_unsigned(idx);
   }
 
   if (wildcard_patterns_.empty()) {
-    return -1;
+    return std::unexpected{Error::ENTITY_NOT_FOUND};
   }
 
   ssize_t best_idx = -1;
@@ -2073,13 +2073,14 @@ ssize_t CertLookupTree::lookup(std::string_view hostname) {
 
     auto wcidx =
       rev_wildcard_router_.match_prefix(&nread, &last_node, rev_host);
-    if (wcidx == -1) {
-      return best_idx;
-    }
+    if (wcidx == -1 ||
+        // '*' must match at least one byte
+        nread == rev_host.size()) {
+      if (best_idx == -1) {
+        return std::unexpected{Error::ENTITY_NOT_FOUND};
+      }
 
-    // '*' must match at least one byte
-    if (nread == rev_host.size()) {
-      return best_idx;
+      return as_unsigned(best_idx);
     }
 
     rev_host = std::string_view{std::ranges::begin(rev_host) + nread,
@@ -2163,17 +2164,19 @@ int cert_lookup_tree_add_ssl_ctx(
 
       auto end_buf = util::tolower(name, name + len, std::ranges::begin(buf));
 
-      auto idx =
+      auto maybe_idx =
         lt->add_cert(std::string_view{std::ranges::begin(buf), end_buf},
                      indexed_ssl_ctx.size());
-      if (idx == -1) {
+      if (!maybe_idx) {
         continue;
       }
 
-      if (static_cast<size_t>(idx) < indexed_ssl_ctx.size()) {
-        indexed_ssl_ctx[as_unsigned(idx)].push_back(ssl_ctx);
+      auto idx = *maybe_idx;
+
+      if (idx < indexed_ssl_ctx.size()) {
+        indexed_ssl_ctx[idx].push_back(ssl_ctx);
       } else {
-        assert(static_cast<size_t>(idx) == indexed_ssl_ctx.size());
+        assert(idx == indexed_ssl_ctx.size());
         indexed_ssl_ctx.emplace_back(std::vector<SSL_CTX *>{ssl_ctx});
       }
     }
@@ -2208,16 +2211,18 @@ int cert_lookup_tree_add_ssl_ctx(
 
   auto end_buf = util::tolower(cn, std::ranges::begin(buf));
 
-  auto idx = lt->add_cert(std::string_view{std::ranges::begin(buf), end_buf},
-                          indexed_ssl_ctx.size());
-  if (idx == -1) {
+  auto maybe_idx = lt->add_cert(
+    std::string_view{std::ranges::begin(buf), end_buf}, indexed_ssl_ctx.size());
+  if (!maybe_idx) {
     return 0;
   }
 
-  if (static_cast<size_t>(idx) < indexed_ssl_ctx.size()) {
-    indexed_ssl_ctx[as_unsigned(idx)].push_back(ssl_ctx);
+  auto idx = *maybe_idx;
+
+  if (idx < indexed_ssl_ctx.size()) {
+    indexed_ssl_ctx[idx].push_back(ssl_ctx);
   } else {
-    assert(static_cast<size_t>(idx) == indexed_ssl_ctx.size());
+    assert(idx == indexed_ssl_ctx.size());
     indexed_ssl_ctx.emplace_back(std::vector<SSL_CTX *>{ssl_ctx});
   }
 

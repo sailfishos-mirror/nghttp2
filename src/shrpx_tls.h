@@ -160,12 +160,12 @@ public:
   //
   // TODO Treat wildcard pattern described as RFC 6125.
   //
-  // This function returns the index.  It returns -1 if it fails
-  // (e.g., hostname is too long).  If the returned index equals to
-  // |index|, then hostname is added to the tree with the value
-  // |index|.  If it is not -1, and does not equal to |index|, same
-  // hostname has already been added to the tree.
-  ssize_t add_cert(std::string_view hostname, size_t index);
+  // This function returns the index.  It may fail with error (e.g.,
+  // hostname is too long).  If the returned index equals to |index|,
+  // then hostname is added to the tree with the value |index|.
+  // Otherwise, same hostname has already been added to the tree.
+  std::expected<size_t, Error> add_cert(std::string_view hostname,
+                                        size_t index);
 
   // Looks up index using the given |hostname|.  The exact match takes
   // precedence over wildcard match.  For wildcard match, longest
@@ -174,7 +174,7 @@ public:
   //
   // The caller should lower-case |hostname| since this function
   // performs case-sensitive match.
-  ssize_t lookup(std::string_view hostname);
+  std::expected<size_t, Error> lookup(std::string_view hostname);
 
   // Dumps the contents of this lookup tree to stderr.
   void dump() const;
