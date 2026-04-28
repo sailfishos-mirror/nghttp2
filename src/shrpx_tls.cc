@@ -2431,13 +2431,21 @@ void try_cache_tls_session(TLSSessionCache *cache, SSL_SESSION *session,
   cache->last_updated = t;
 }
 
-SSL_SESSION *reuse_tls_session(const TLSSessionCache &cache) {
+std::expected<SSL_SESSION *, Error>
+reuse_tls_session(const TLSSessionCache &cache) {
   if (cache.session_data.empty()) {
-    return nullptr;
+    return std::unexpected{Error::ENTITY_NOT_FOUND};
   }
 
   auto p = cache.session_data.data();
-  return d2i_SSL_SESSION(nullptr, &p, as_signed(cache.session_data.size()));
+
+  auto session =
+    d2i_SSL_SESSION(nullptr, &p, as_signed(cache.session_data.size()));
+  if (!session) {
+    return std::unexpected{Error::CRYPTO};
+  }
+
+  return session;
 }
 
 int proto_version_from_string(std::string_view v) {

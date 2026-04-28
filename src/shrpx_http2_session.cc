@@ -447,8 +447,10 @@ std::expected<void, Error> Http2Session::initiate_connection() {
           SSL_set_tlsext_host_name(conn_.tls.ssl, sni_name.data());
         }
 
-        auto tls_session = tls::reuse_tls_session(addr_->tls_session_cache);
-        if (tls_session) {
+        auto maybe_tls_session =
+          tls::reuse_tls_session(addr_->tls_session_cache);
+        if (maybe_tls_session) {
+          auto tls_session = *maybe_tls_session;
           SSL_set_session(conn_.tls.ssl, tls_session);
           SSL_SESSION_free(tls_session);
         }

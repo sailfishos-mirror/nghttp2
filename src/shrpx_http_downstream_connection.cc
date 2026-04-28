@@ -403,8 +403,9 @@ std::expected<void, Error> HttpDownstreamConnection::initiate_connection() {
         SSL_set_tlsext_host_name(conn_.tls.ssl, sni_name.data());
       }
 
-      auto session = tls::reuse_tls_session(addr_->tls_session_cache);
-      if (session) {
+      auto maybe_session = tls::reuse_tls_session(addr_->tls_session_cache);
+      if (maybe_session) {
+        auto session = *maybe_session;
         SSL_set_session(conn_.tls.ssl, session);
         SSL_SESSION_free(session);
       }

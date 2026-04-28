@@ -280,9 +280,9 @@ bool tls_hostname_match(std::string_view pattern, std::string_view hostname);
 void try_cache_tls_session(TLSSessionCache *cache, SSL_SESSION *session,
                            std::chrono::steady_clock::time_point t);
 
-// Returns cached session associated |addr|.  If no cache entry is
-// found associated to |addr|, nullptr will be returned.
-SSL_SESSION *reuse_tls_session(const TLSSessionCache &addr);
+// Returns cached session associated |addr|.
+std::expected<SSL_SESSION *, Error>
+reuse_tls_session(const TLSSessionCache &addr);
 
 // Loads certificate form file |filename|.  The caller should delete
 // the returned object using X509_free().

@@ -187,8 +187,9 @@ int MemcachedConnection::initiate_connection() {
       SSL_set_tlsext_host_name(conn_.tls.ssl, sni_name_.data());
     }
 
-    auto session = tls::reuse_tls_session(tls_session_cache_);
-    if (session) {
+    auto maybe_session = tls::reuse_tls_session(tls_session_cache_);
+    if (maybe_session) {
+      auto session = *maybe_session;
       SSL_set_session(conn_.tls.ssl, session);
       SSL_SESSION_free(session);
     }
