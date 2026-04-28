@@ -234,15 +234,15 @@ int get_new_connection_id(ngtcp2_conn *conn, ngtcp2_cid *cid, uint8_t *token,
 
   assert(SHRPX_QUIC_SCIDLEN == cidlen);
 
-  if (generate_quic_connection_id(*cid, worker->get_worker_id(), qkm.id,
-                                  qkm.cid_encryption_ctx) != 0) {
+  if (!generate_quic_connection_id(*cid, worker->get_worker_id(), qkm.id,
+                                   qkm.cid_encryption_ctx)) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
 
-  if (generate_quic_stateless_reset_token(
+  if (!generate_quic_stateless_reset_token(
         std::span<uint8_t, NGTCP2_STATELESS_RESET_TOKENLEN>{
           token, NGTCP2_STATELESS_RESET_TOKENLEN},
-        *cid, qkm.secret) != 0) {
+        *cid, qkm.secret)) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
 
@@ -619,9 +619,10 @@ Http3Upstream::init(const UpstreamAddr *faddr, const Address &remote_addr,
 
   ngtcp2_cid scid;
 
-  if (generate_quic_connection_id(scid, worker->get_worker_id(), qkm.id,
-                                  qkm.cid_encryption_ctx) != 0) {
-    return std::unexpected{Error::INTERNAL};
+  if (auto rv = generate_quic_connection_id(scid, worker->get_worker_id(),
+                                            qkm.id, qkm.cid_encryption_ctx);
+      !rv) {
+    return rv;
   }
 
   ngtcp2_settings settings;
@@ -715,11 +716,11 @@ Http3Upstream::init(const UpstreamAddr *faddr, const Address &remote_addr,
 
   params.original_dcid_present = 1;
 
-  rv = generate_quic_stateless_reset_token(
-    std::span{params.stateless_reset_token}, scid, qkm.secret);
-  if (rv != 0) {
+  if (auto rv = generate_quic_stateless_reset_token(
+        std::span{params.stateless_reset_token}, scid, qkm.secret);
+      !rv) {
     Log{ERROR, this} << "generate_quic_stateless_reset_token failed";
-    return std::unexpected{Error::INTERNAL};
+    return rv;
   }
   params.stateless_reset_token_present = 1;
 
@@ -760,9 +761,10 @@ Http3Upstream::init(const UpstreamAddr *faddr, const Address &remote_addr,
 
   auto quic_connection_handler = worker->get_quic_connection_handler();
 
-  if (generate_quic_hashed_connection_id(hashed_scid_, remote_addr, local_addr,
-                                         initial_hd.dcid) != 0) {
-    return std::unexpected{Error::INTERNAL};
+  if (auto rv = generate_quic_hashed_connection_id(hashed_scid_, remote_addr,
+                                                   local_addr, initial_hd.dcid);
+      !rv) {
+    return rv;
   }
 
   quic_connection_handler->add_connection_id(hashed_scid_, handler_);

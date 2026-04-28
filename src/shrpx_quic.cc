@@ -195,10 +195,11 @@ int quic_send_packet(const UpstreamAddr *faddr, const sockaddr *remote_sa,
   return 0;
 }
 
-int generate_quic_retry_connection_id(ngtcp2_cid &cid, uint32_t server_id,
-                                      uint8_t km_id, EVP_CIPHER_CTX *ctx) {
+std::expected<void, Error>
+generate_quic_retry_connection_id(ngtcp2_cid &cid, uint32_t server_id,
+                                  uint8_t km_id, EVP_CIPHER_CTX *ctx) {
   if (RAND_bytes(cid.data, SHRPX_QUIC_SCIDLEN) != 1) {
-    return -1;
+    return std::unexpected{Error::CRYPTO};
   }
 
   cid.datalen = SHRPX_QUIC_SCIDLEN;
@@ -213,10 +214,12 @@ int generate_quic_retry_connection_id(ngtcp2_cid &cid, uint32_t server_id,
   return encrypt_quic_connection_id(b, b, ctx);
 }
 
-int generate_quic_connection_id(ngtcp2_cid &cid, const WorkerID &wid,
-                                uint8_t km_id, EVP_CIPHER_CTX *ctx) {
+std::expected<void, Error> generate_quic_connection_id(ngtcp2_cid &cid,
+                                                       const WorkerID &wid,
+                                                       uint8_t km_id,
+                                                       EVP_CIPHER_CTX *ctx) {
   if (RAND_bytes(cid.data, SHRPX_QUIC_SCIDLEN) != 1) {
-    return -1;
+    return std::unexpected{Error::CRYPTO};
   }
 
   cid.datalen = SHRPX_QUIC_SCIDLEN;
@@ -231,9 +234,9 @@ int generate_quic_connection_id(ngtcp2_cid &cid, const WorkerID &wid,
   return encrypt_quic_connection_id(b, b, ctx);
 }
 
-int encrypt_quic_connection_id(std::span<uint8_t> dest,
-                               std::span<const uint8_t> src,
-                               EVP_CIPHER_CTX *ctx) {
+std::expected<void, Error>
+encrypt_quic_connection_id(std::span<uint8_t> dest,
+                           std::span<const uint8_t> src, EVP_CIPHER_CTX *ctx) {
   assert(src.size() == SHRPX_QUIC_DECRYPTED_DCIDLEN);
 
   int len;
@@ -241,14 +244,15 @@ int encrypt_quic_connection_id(std::span<uint8_t> dest,
   if (!EVP_EncryptUpdate(ctx, dest.data(), &len, src.data(),
                          static_cast<int>(src.size())) ||
       !EVP_EncryptFinal_ex(ctx, dest.data() + len, &len)) {
-    return -1;
+    return std::unexpected{Error::CRYPTO};
   }
 
-  return 0;
+  return {};
 }
 
-int decrypt_quic_connection_id(ConnectionID &dest, std::span<const uint8_t> src,
-                               EVP_CIPHER_CTX *ctx) {
+std::expected<void, Error>
+decrypt_quic_connection_id(ConnectionID &dest, std::span<const uint8_t> src,
+                           EVP_CIPHER_CTX *ctx) {
   assert(src.size() == SHRPX_QUIC_DECRYPTED_DCIDLEN);
 
   int len;
@@ -257,16 +261,16 @@ int decrypt_quic_connection_id(ConnectionID &dest, std::span<const uint8_t> src,
   if (!EVP_DecryptUpdate(ctx, p, &len, src.data(),
                          static_cast<int>(src.size())) ||
       !EVP_DecryptFinal_ex(ctx, p + len, &len)) {
-    return -1;
+    return std::unexpected{Error::CRYPTO};
   }
 
-  return 0;
+  return {};
 }
 
-int generate_quic_hashed_connection_id(ngtcp2_cid &dest,
-                                       const Address &remote_addr,
-                                       const Address &local_addr,
-                                       const ngtcp2_cid &cid) {
+std::expected<void, Error>
+generate_quic_hashed_connection_id(ngtcp2_cid &dest, const Address &remote_addr,
+                                   const Address &local_addr,
+                                   const ngtcp2_cid &cid) {
   auto ctx = EVP_MD_CTX_new();
   auto d = defer([ctx] { EVP_MD_CTX_free(ctx); });
 
@@ -278,7 +282,7 @@ int generate_quic_hashed_connection_id(ngtcp2_cid &dest,
       !EVP_DigestUpdate(ctx, local_addr.as_sockaddr(), local_addr.size()) ||
       !EVP_DigestUpdate(ctx, cid.data, cid.datalen) ||
       !EVP_DigestFinal_ex(ctx, h.data(), &hlen)) {
-    return -1;
+    return std::unexpected{Error::CRYPTO};
   }
 
   assert(hlen == h.size());
@@ -287,18 +291,18 @@ int generate_quic_hashed_connection_id(ngtcp2_cid &dest,
                       std::ranges::begin(dest.data));
   dest.datalen = sizeof(dest.data);
 
-  return 0;
+  return {};
 }
 
-int generate_quic_stateless_reset_token(
+std::expected<void, Error> generate_quic_stateless_reset_token(
   std::span<uint8_t, NGTCP2_STATELESS_RESET_TOKENLEN> token,
   const ngtcp2_cid &cid, std::span<const uint8_t> secret) {
   if (ngtcp2_crypto_generate_stateless_reset_token(token.data(), secret.data(),
                                                    secret.size(), &cid) != 0) {
-    return -1;
+    return std::unexpected{Error::QUIC};
   }
 
-  return 0;
+  return {};
 }
 
 std::expected<std::span<const uint8_t>, Error>

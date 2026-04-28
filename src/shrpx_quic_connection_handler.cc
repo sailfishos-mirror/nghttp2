@@ -109,8 +109,8 @@ int QUICConnectionHandler::handle_packet(const UpstreamAddr *faddr,
     }
 
     if (data[0] & 0x80) {
-      if (generate_quic_hashed_connection_id(dcid_key, remote_addr, local_addr,
-                                             dcid_key) != 0) {
+      if (!generate_quic_hashed_connection_id(dcid_key, remote_addr, local_addr,
+                                              dcid_key)) {
         return 0;
       }
 
@@ -138,10 +138,10 @@ int QUICConnectionHandler::handle_packet(const UpstreamAddr *faddr,
       qkm = select_quic_keying_material(
         *qkms.get(), vc.dcid[0] & SHRPX_QUIC_DCID_KM_ID_MASK);
 
-      if (decrypt_quic_connection_id(decrypted_dcid,
-                                     std::span{vc.dcid, vc.dcidlen}.subspan(
-                                       SHRPX_QUIC_CID_WORKER_ID_OFFSET),
-                                     qkm->cid_decryption_ctx) != 0) {
+      if (!decrypt_quic_connection_id(decrypted_dcid,
+                                      std::span{vc.dcid, vc.dcidlen}.subspan(
+                                        SHRPX_QUIC_CID_WORKER_ID_OFFSET),
+                                      qkm->cid_decryption_ctx)) {
         return 0;
       }
 
@@ -188,10 +188,11 @@ int QUICConnectionHandler::handle_packet(const UpstreamAddr *faddr,
         if (qkm != &qkms->keying_materials.front()) {
           qkm = &qkms->keying_materials.front();
 
-          if (decrypt_quic_connection_id(decrypted_dcid,
-                                         std::span{vc.dcid, vc.dcidlen}.subspan(
-                                           SHRPX_QUIC_CID_WORKER_ID_OFFSET),
-                                         qkm->cid_decryption_ctx) != 0) {
+          if (!decrypt_quic_connection_id(
+                decrypted_dcid,
+                std::span{vc.dcid, vc.dcidlen}.subspan(
+                  SHRPX_QUIC_CID_WORKER_ID_OFFSET),
+                qkm->cid_decryption_ctx)) {
             return 0;
           }
         }
@@ -491,8 +492,8 @@ int QUICConnectionHandler::send_retry(
 
   ngtcp2_cid retry_scid;
 
-  if (generate_quic_retry_connection_id(retry_scid, quicconf.server_id, qkm.id,
-                                        qkm.cid_encryption_ctx) != 0) {
+  if (!generate_quic_retry_connection_id(retry_scid, quicconf.server_id, qkm.id,
+                                         qkm.cid_encryption_ctx)) {
     return -1;
   }
 
@@ -533,8 +534,8 @@ int QUICConnectionHandler::send_retry(
                    local_addr.as_sockaddr(), local_addr.size(),
                    ngtcp2_pkt_info{}, {retry.get(), retrylen}, retrylen);
 
-  if (generate_quic_hashed_connection_id(idcid, remote_addr, local_addr,
-                                         idcid) != 0) {
+  if (!generate_quic_hashed_connection_id(idcid, remote_addr, local_addr,
+                                          idcid)) {
     return -1;
   }
 
@@ -611,8 +612,7 @@ int QUICConnectionHandler::send_stateless_reset(const UpstreamAddr *faddr,
   auto &qkms = conn_handler->get_quic_keying_materials();
   auto &qkm = qkms->keying_materials.front();
 
-  if (auto rv = generate_quic_stateless_reset_token(token, cid, qkm.secret);
-      rv != 0) {
+  if (!generate_quic_stateless_reset_token(token, cid, qkm.secret)) {
     return -1;
   }
 
