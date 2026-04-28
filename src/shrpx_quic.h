@@ -151,17 +151,18 @@ generate_retry_token(std::span<uint8_t> token, uint32_t version,
                      const ngtcp2_cid &retry_scid, const ngtcp2_cid &odcid,
                      std::span<const uint8_t> secret);
 
-int verify_retry_token(ngtcp2_cid &odcid, std::span<const uint8_t> token,
-                       uint32_t version, const ngtcp2_cid &dcid,
-                       const sockaddr *sa, socklen_t salen,
-                       std::span<const uint8_t> secret);
+std::expected<void, Error>
+verify_retry_token(ngtcp2_cid &odcid, std::span<const uint8_t> token,
+                   uint32_t version, const ngtcp2_cid &dcid, const sockaddr *sa,
+                   socklen_t salen, std::span<const uint8_t> secret);
 
 std::expected<std::span<const uint8_t>, Error>
 generate_token(std::span<uint8_t> token, const sockaddr *sa, size_t salen,
                std::span<const uint8_t> secret, uint8_t km_id);
 
-int verify_token(std::span<const uint8_t> token, const sockaddr *sa,
-                 socklen_t salen, std::span<const uint8_t> secret);
+std::expected<void, Error> verify_token(std::span<const uint8_t> token,
+                                        const sockaddr *sa, socklen_t salen,
+                                        std::span<const uint8_t> secret);
 
 int generate_quic_connection_id_encryption_key(std::span<uint8_t> key,
                                                std::span<const uint8_t> secret,

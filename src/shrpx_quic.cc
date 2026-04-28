@@ -315,7 +315,7 @@ generate_retry_token(std::span<uint8_t> token, uint32_t version,
       std::chrono::system_clock::now().time_since_epoch())
       .count());
 
-  auto tokenlen = ngtcp2_crypto_generate_retry_token(
+  auto tokenlen = ngtcp2_crypto_generate_retry_token2(
     token.data(), secret.data(), secret.size(), version, sa, salen, &retry_scid,
     &odcid, t);
   if (tokenlen < 0) {
@@ -325,22 +325,27 @@ generate_retry_token(std::span<uint8_t> token, uint32_t version,
   return token.first(as_unsigned(tokenlen));
 }
 
-int verify_retry_token(ngtcp2_cid &odcid, std::span<const uint8_t> token,
-                       uint32_t version, const ngtcp2_cid &dcid,
-                       const sockaddr *sa, socklen_t salen,
-                       std::span<const uint8_t> secret) {
+std::expected<void, Error>
+verify_retry_token(ngtcp2_cid &odcid, std::span<const uint8_t> token,
+                   uint32_t version, const ngtcp2_cid &dcid, const sockaddr *sa,
+                   socklen_t salen, std::span<const uint8_t> secret) {
   auto t = static_cast<ngtcp2_tstamp>(
     std::chrono::duration_cast<std::chrono::nanoseconds>(
       std::chrono::system_clock::now().time_since_epoch())
       .count());
 
-  if (ngtcp2_crypto_verify_retry_token(
-        &odcid, token.data(), token.size(), secret.data(), secret.size(),
-        version, sa, salen, &dcid, 10 * NGTCP2_SECONDS, t) != 0) {
-    return -1;
+  auto rv = ngtcp2_crypto_verify_retry_token2(
+    &odcid, token.data(), token.size(), secret.data(), secret.size(), version,
+    sa, salen, &dcid, 10 * NGTCP2_SECONDS, t);
+  if (rv != 0) {
+    if (rv == NGTCP2_CRYPTO_ERR_VERIFY_TOKEN) {
+      return std::unexpected{Error::QUIC_VERIFY_TOKEN};
+    }
+
+    return std::unexpected{Error::QUIC_UNREADABLE_TOKEN};
   }
 
-  return 0;
+  return {};
 }
 
 std::expected<std::span<const uint8_t>, Error>
@@ -363,10 +368,11 @@ generate_token(std::span<uint8_t> token, const sockaddr *sa, size_t salen,
   return token.first(as_unsigned(tokenlen));
 }
 
-int verify_token(std::span<const uint8_t> token, const sockaddr *sa,
-                 socklen_t salen, std::span<const uint8_t> secret) {
+std::expected<void, Error> verify_token(std::span<const uint8_t> token,
+                                        const sockaddr *sa, socklen_t salen,
+                                        std::span<const uint8_t> secret) {
   if (token.empty()) {
-    return -1;
+    return std::unexpected{Error::QUIC_UNREADABLE_TOKEN};
   }
 
   auto t = static_cast<ngtcp2_tstamp>(
@@ -374,13 +380,18 @@ int verify_token(std::span<const uint8_t> token, const sockaddr *sa,
       std::chrono::system_clock::now().time_since_epoch())
       .count());
 
-  if (ngtcp2_crypto_verify_regular_token(
-        token.data(), token.size() - 1, secret.data(), secret.size(), sa, salen,
-        3600 * NGTCP2_SECONDS, t) != 0) {
-    return -1;
+  auto rv = ngtcp2_crypto_verify_regular_token2(
+    nullptr, 0, token.data(), token.size() - 1, secret.data(), secret.size(),
+    sa, salen, 3600 * NGTCP2_SECONDS, t);
+  if (rv < 0) {
+    if (rv == NGTCP2_CRYPTO_ERR_VERIFY_TOKEN) {
+      return std::unexpected{Error::QUIC_VERIFY_TOKEN};
+    }
+
+    return std::unexpected{Error::QUIC_UNREADABLE_TOKEN};
   }
 
-  return 0;
+  return {};
 }
 
 int generate_quic_connection_id_encryption_key(std::span<uint8_t> key,
