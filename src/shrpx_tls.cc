@@ -2428,7 +2428,7 @@ reuse_tls_session(const TLSSessionCache &cache) {
   return session;
 }
 
-int proto_version_from_string(std::string_view v) {
+std::expected<int, Error> proto_version_from_string(std::string_view v) {
 #ifdef TLS1_3_VERSION
   if (util::strieq("TLSv1.3"sv, v)) {
     return TLS1_3_VERSION;
@@ -2437,7 +2437,7 @@ int proto_version_from_string(std::string_view v) {
   if (util::strieq("TLSv1.2"sv, v)) {
     return TLS1_2_VERSION;
   }
-  return -1;
+  return std::unexpected{Error::INVALID_ARGUMENT};
 }
 
 ssize_t get_x509_fingerprint(uint8_t *dst, size_t dstlen, const X509 *x,

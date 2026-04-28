@@ -285,9 +285,8 @@ std::expected<SSL_SESSION *, Error>
 reuse_tls_session(const TLSSessionCache &addr);
 
 // Returns TLS version from |v|.  The returned value is defined in
-// OpenSSL header file.  This function returns -1 if |v| is not valid
-// TLS version string.
-int proto_version_from_string(std::string_view v);
+// OpenSSL header file.
+std::expected<int, Error> proto_version_from_string(std::string_view v);
 
 // Stores fingerprint of |x| in |dst| of length |dstlen|.  |md|
 // specifies hash function to use, and |dstlen| must be large enough

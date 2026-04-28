@@ -866,13 +866,13 @@ int parse_duration(ev_tstamp *dest, std::string_view opt,
 namespace {
 int parse_tls_proto_version(int &dest, std::string_view opt,
                             std::string_view optarg) {
-  auto v = tls::proto_version_from_string(optarg);
-  if (v == -1) {
+  auto maybe_v = tls::proto_version_from_string(optarg);
+  if (!maybe_v) {
     Log{ERROR} << opt << ": invalid TLS protocol version: " << optarg;
     return -1;
   }
 
-  dest = v;
+  dest = *maybe_v;
 
   return 0;
 }
