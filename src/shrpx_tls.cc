@@ -176,16 +176,16 @@ int ssl_pem_passwd_cb(char *buf, int size, int rwflag, void *user_data) {
 } // namespace
 
 namespace {
-std::string_view get_servername(SSL *ssl) {
+std::expected<std::string_view, Error> get_servername(SSL *ssl) {
   auto rawhost = SSL_get_servername(ssl, TLSEXT_NAMETYPE_host_name);
   if (rawhost == nullptr) {
-    return ""sv;
+    return std::unexpected{Error::CRYPTO};
   }
 
   auto servername = std::string_view{rawhost};
   // NI_MAXHOST includes terminal NULL.
   if (servername.empty() || servername.size() + 1 > NI_MAXHOST) {
-    return ""sv;
+    return std::unexpected{Error::INTERNAL};
   }
 
   return servername;
@@ -359,13 +359,13 @@ namespace {
 // *al is set to SSL_AD_UNRECOGNIZED_NAME by openssl, so we don't have
 // to set it explicitly.
 int servername_callback(SSL *ssl, int *al, void *arg) {
-  auto servername = get_servername(ssl);
-  if (servername.empty()) {
+  auto maybe_servername = get_servername(ssl);
+  if (!maybe_servername) {
     return SSL_TLSEXT_ERR_NOACK;
   }
 
 #if defined(NGHTTP2_GENUINE_OPENSSL) || defined(NGHTTP2_OPENSSL_IS_LIBRESSL)
-  select_ssl_ctx(ssl, servername);
+  select_ssl_ctx(ssl, *maybe_servername);
 #endif // defined(NGHTTP2_GENUINE_OPENSSL) ||
        // defined(NGHTTP2_OPENSSL_IS_LIBRESSL)
 
@@ -376,9 +376,9 @@ int servername_callback(SSL *ssl, int *al, void *arg) {
 #if defined(NGHTTP2_OPENSSL_IS_BORINGSSL) || defined(NGHTTP2_OPENSSL_IS_WOLFSSL)
 namespace {
 int cert_cb(SSL *ssl, void *arg) {
-  auto servername = get_servername(ssl);
-  if (!servername.empty()) {
-    select_ssl_ctx(ssl, servername);
+  auto maybe_servername = get_servername(ssl);
+  if (maybe_servername) {
+    select_ssl_ctx(ssl, *maybe_servername);
   }
 
   return 1;
