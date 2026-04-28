@@ -284,10 +284,6 @@ void try_cache_tls_session(TLSSessionCache *cache, SSL_SESSION *session,
 std::expected<SSL_SESSION *, Error>
 reuse_tls_session(const TLSSessionCache &addr);
 
-// Loads certificate form file |filename|.  The caller should delete
-// the returned object using X509_free().
-X509 *load_certificate(const char *filename);
-
 // Returns TLS version from |v|.  The returned value is defined in
 // OpenSSL header file.  This function returns -1 if |v| is not valid
 // TLS version string.

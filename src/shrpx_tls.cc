@@ -2250,26 +2250,6 @@ bool upstream_tls_enabled(const ConnectionConfig &connconf) {
     faddrs, [](const UpstreamAddr &faddr) { return faddr.tls; });
 }
 
-X509 *load_certificate(const char *filename) {
-  auto bio = BIO_new(BIO_s_file());
-  if (!bio) {
-    fprintf(stderr, "BIO_new() failed\n");
-    return nullptr;
-  }
-  auto bio_deleter = defer([bio] { BIO_vfree(bio); });
-  if (!BIO_read_filename(bio, filename)) {
-    fprintf(stderr, "Could not read certificate file '%s'\n", filename);
-    return nullptr;
-  }
-  auto cert = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr);
-  if (!cert) {
-    fprintf(stderr, "Could not read X509 structure from file '%s'\n", filename);
-    return nullptr;
-  }
-
-  return cert;
-}
-
 SSL_CTX *
 setup_server_ssl_context(std::vector<SSL_CTX *> &all_ssl_ctx,
                          std::vector<std::vector<SSL_CTX *>> &indexed_ssl_ctx,
