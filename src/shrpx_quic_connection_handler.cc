@@ -109,8 +109,8 @@ int QUICConnectionHandler::handle_packet(const UpstreamAddr *faddr,
     }
 
     if (data[0] & 0x80) {
-      if (generate_quic_hashed_connection_id(dcid_key, remote_addr, local_addr,
-                                             dcid_key) != 0) {
+      if (!generate_quic_hashed_connection_id(dcid_key, remote_addr, local_addr,
+                                              dcid_key)) {
         return 0;
       }
 
@@ -138,10 +138,10 @@ int QUICConnectionHandler::handle_packet(const UpstreamAddr *faddr,
       qkm = select_quic_keying_material(
         *qkms.get(), vc.dcid[0] & SHRPX_QUIC_DCID_KM_ID_MASK);
 
-      if (decrypt_quic_connection_id(decrypted_dcid,
-                                     std::span{vc.dcid, vc.dcidlen}.subspan(
-                                       SHRPX_QUIC_CID_WORKER_ID_OFFSET),
-                                     qkm->cid_decryption_ctx) != 0) {
+      if (!decrypt_quic_connection_id(decrypted_dcid,
+                                      std::span{vc.dcid, vc.dcidlen}.subspan(
+                                        SHRPX_QUIC_CID_WORKER_ID_OFFSET),
+                                      qkm->cid_decryption_ctx)) {
         return 0;
       }
 
@@ -188,10 +188,11 @@ int QUICConnectionHandler::handle_packet(const UpstreamAddr *faddr,
         if (qkm != &qkms->keying_materials.front()) {
           qkm = &qkms->keying_materials.front();
 
-          if (decrypt_quic_connection_id(decrypted_dcid,
-                                         std::span{vc.dcid, vc.dcidlen}.subspan(
-                                           SHRPX_QUIC_CID_WORKER_ID_OFFSET),
-                                         qkm->cid_decryption_ctx) != 0) {
+          if (!decrypt_quic_connection_id(
+                decrypted_dcid,
+                std::span{vc.dcid, vc.dcidlen}.subspan(
+                  SHRPX_QUIC_CID_WORKER_ID_OFFSET),
+                qkm->cid_decryption_ctx)) {
             return 0;
           }
         }
@@ -221,7 +222,7 @@ int QUICConnectionHandler::handle_packet(const UpstreamAddr *faddr,
       }
 
       switch (hd.token[0]) {
-      case NGTCP2_CRYPTO_TOKEN_MAGIC_RETRY: {
+      case NGTCP2_CRYPTO_TOKEN_MAGIC_RETRY2: {
         if (vc.dcidlen != SHRPX_QUIC_SCIDLEN) {
           // Initial packets with Retry token must have DCID chosen by
           // server.
@@ -231,20 +232,28 @@ int QUICConnectionHandler::handle_packet(const UpstreamAddr *faddr,
         auto qkm = select_quic_keying_material(
           *qkms.get(), vc.dcid[0] & SHRPX_QUIC_DCID_KM_ID_MASK);
 
-        if (verify_retry_token(odcid, {hd.token, hd.tokenlen}, hd.version,
-                               hd.dcid, remote_addr.as_sockaddr(),
-                               remote_addr.size(), qkm->secret) != 0) {
+        if (auto rv = verify_retry_token(
+              odcid, {hd.token, hd.tokenlen}, hd.version, hd.dcid,
+              remote_addr.as_sockaddr(), remote_addr.size(), qkm->secret);
+            !rv) {
           if (log_enabled(INFO)) {
             Log{INFO} << "Failed to validate Retry token from remote="
                       << util::to_numeric_addr(&remote_addr);
           }
 
-          // 2nd Retry packet is not allowed, so send CONNECTION_CLOSE
-          // with INVALID_TOKEN.
-          send_connection_close(faddr, hd.version, hd.dcid, hd.scid,
-                                remote_addr, local_addr, NGTCP2_INVALID_TOKEN,
-                                data.size() * 3);
-          return 0;
+          if (rv.error() != Error::QUIC_UNREADABLE_TOKEN ||
+              quicconf.upstream.require_token) {
+            // 2nd Retry packet is not allowed, so send
+            // CONNECTION_CLOSE with INVALID_TOKEN.
+            send_connection_close(faddr, hd.version, hd.dcid, hd.scid,
+                                  remote_addr, local_addr, NGTCP2_INVALID_TOKEN,
+                                  data.size() * 3);
+            return 0;
+          }
+
+          // Ignore unreadable token.
+
+          break;
         }
 
         if (log_enabled(INFO)) {
@@ -285,8 +294,8 @@ int QUICConnectionHandler::handle_packet(const UpstreamAddr *faddr,
         auto qkm = select_quic_keying_material(
           *qkms.get(), hd.token[NGTCP2_CRYPTO_MAX_REGULAR_TOKENLEN]);
 
-        if (verify_token({hd.token, hd.tokenlen}, remote_addr.as_sockaddr(),
-                         remote_addr.size(), qkm->secret) != 0) {
+        if (!verify_token({hd.token, hd.tokenlen}, remote_addr.as_sockaddr(),
+                          remote_addr.size(), qkm->secret)) {
           if (log_enabled(INFO)) {
             Log{INFO} << "Failed to validate token from remote="
                       << util::to_numeric_addr(&remote_addr);
@@ -491,8 +500,8 @@ int QUICConnectionHandler::send_retry(
 
   ngtcp2_cid retry_scid;
 
-  if (generate_quic_retry_connection_id(retry_scid, quicconf.server_id, qkm.id,
-                                        qkm.cid_encryption_ctx) != 0) {
+  if (!generate_quic_retry_connection_id(retry_scid, quicconf.server_id, qkm.id,
+                                         qkm.cid_encryption_ctx)) {
     return -1;
   }
 
@@ -500,7 +509,7 @@ int QUICConnectionHandler::send_retry(
   ngtcp2_cid_init(&idcid, ini_dcid.data(), ini_dcid.size());
   ngtcp2_cid_init(&iscid, ini_scid.data(), ini_scid.size());
 
-  std::array<uint8_t, NGTCP2_CRYPTO_MAX_RETRY_TOKENLEN> tokenbuf;
+  std::array<uint8_t, NGTCP2_CRYPTO_MAX_RETRY_TOKENLEN2> tokenbuf;
 
   auto token =
     generate_retry_token(tokenbuf, version, remote_sockaddr, remote_sockaddrlen,
@@ -533,8 +542,8 @@ int QUICConnectionHandler::send_retry(
                    local_addr.as_sockaddr(), local_addr.size(),
                    ngtcp2_pkt_info{}, {retry.get(), retrylen}, retrylen);
 
-  if (generate_quic_hashed_connection_id(idcid, remote_addr, local_addr,
-                                         idcid) != 0) {
+  if (!generate_quic_hashed_connection_id(idcid, remote_addr, local_addr,
+                                          idcid)) {
     return -1;
   }
 
@@ -611,8 +620,7 @@ int QUICConnectionHandler::send_stateless_reset(const UpstreamAddr *faddr,
   auto &qkms = conn_handler->get_quic_keying_materials();
   auto &qkm = qkms->keying_materials.front();
 
-  if (auto rv = generate_quic_stateless_reset_token(token, cid, qkm.secret);
-      rv != 0) {
+  if (!generate_quic_stateless_reset_token(token, cid, qkm.secret)) {
     return -1;
   }
 

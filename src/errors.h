@@ -74,8 +74,10 @@ enum class Error {
   QUIC_RETRY_CONN,
   // QUIC connection should be dropped.
   QUIC_DROP_CONN,
-  // Retry token is unreadable, and should be ignored.
+  // QUIC token is unreadable, and should be ignored.
   QUIC_UNREADABLE_TOKEN,
+  // Verification of QUIC token failed.
+  QUIC_VERIFY_TOKEN,
   // Network related error in general.
   NETWORK,
   // EOF is received from socket.
@@ -182,6 +184,9 @@ struct std::formatter<nghttp2::Error>
       break;
     case nghttp2::Error::QUIC_UNREADABLE_TOKEN:
       s = "QUIC unreadable token"sv;
+      break;
+    case nghttp2::Error::QUIC_VERIFY_TOKEN:
+      s = "QUIC token verification error"sv;
       break;
     case nghttp2::Error::NETWORK:
       s = "network"sv;
