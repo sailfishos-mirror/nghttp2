@@ -394,10 +394,12 @@ QUICConnectionHandler::handle_new_connection(
 
   assert(ssl_ctx);
 
-  auto ssl = tls::create_ssl(ssl_ctx);
-  if (ssl == nullptr) {
-    return std::unexpected{Error::INTERNAL};
+  auto maybe_ssl = tls::create_ssl(ssl_ctx);
+  if (!maybe_ssl) {
+    return std::unexpected{maybe_ssl.error()};
   }
+
+  auto ssl = *maybe_ssl;
 
 #if !OPENSSL_3_5_0_API &&                                                      \
   (defined(NGHTTP2_GENUINE_OPENSSL) || defined(NGHTTP2_OPENSSL_IS_WOLFSSL))

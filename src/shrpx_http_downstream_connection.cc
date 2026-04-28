@@ -386,10 +386,12 @@ std::expected<void, Error> HttpDownstreamConnection::initiate_connection() {
     if (addr_->tls) {
       assert(ssl_ctx_);
 
-      auto ssl = tls::create_ssl(ssl_ctx_);
-      if (!ssl) {
-        return std::unexpected{Error::CRYPTO};
+      auto maybe_ssl = tls::create_ssl(ssl_ctx_);
+      if (!maybe_ssl) {
+        return std::unexpected{maybe_ssl.error()};
       }
+
+      auto ssl = *maybe_ssl;
 
       tls::setup_downstream_http1_alpn(ssl);
 
@@ -401,8 +403,9 @@ std::expected<void, Error> HttpDownstreamConnection::initiate_connection() {
         SSL_set_tlsext_host_name(conn_.tls.ssl, sni_name.data());
       }
 
-      auto session = tls::reuse_tls_session(addr_->tls_session_cache);
-      if (session) {
+      auto maybe_session = tls::reuse_tls_session(addr_->tls_session_cache);
+      if (maybe_session) {
+        auto session = *maybe_session;
         SSL_set_session(conn_.tls.ssl, session);
         SSL_SESSION_free(session);
       }
@@ -1327,11 +1330,12 @@ std::expected<void, Error> HttpDownstreamConnection::tls_handshake() {
     Log{INFO, this} << "SSL/TLS handshake completed";
   }
 
-  if (!get_config()->tls.insecure &&
-      tls::check_cert(conn_.tls.ssl, addr_, raddr_) != 0) {
-    downstream_failure(addr_, raddr_);
+  if (!get_config()->tls.insecure) {
+    if (auto rv = tls::check_cert(conn_.tls.ssl, addr_, raddr_); !rv) {
+      downstream_failure(addr_, raddr_);
 
-    return std::unexpected{Error::TLS_VERIFY_PEER};
+      return rv;
+    }
   }
 
   auto &connect_blocker = addr_->connect_blocker;

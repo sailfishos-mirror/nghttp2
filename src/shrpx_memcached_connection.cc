@@ -152,11 +152,11 @@ int MemcachedConnection::initiate_connection() {
   assert(conn_.fd == -1);
 
   if (ssl_ctx_) {
-    auto ssl = tls::create_ssl(ssl_ctx_);
-    if (!ssl) {
+    auto maybe_ssl = tls::create_ssl(ssl_ctx_);
+    if (!maybe_ssl) {
       return -1;
     }
-    conn_.set_ssl(ssl);
+    conn_.set_ssl(*maybe_ssl);
     conn_.tls.client_session_cache = &tls_session_cache_;
   }
 
@@ -187,8 +187,9 @@ int MemcachedConnection::initiate_connection() {
       SSL_set_tlsext_host_name(conn_.tls.ssl, sni_name_.data());
     }
 
-    auto session = tls::reuse_tls_session(tls_session_cache_);
-    if (session) {
+    auto maybe_session = tls::reuse_tls_session(tls_session_cache_);
+    if (maybe_session) {
+      auto session = *maybe_session;
       SSL_set_session(conn_.tls.ssl, session);
       SSL_SESSION_free(session);
     }
@@ -280,10 +281,11 @@ std::expected<void, Error> MemcachedConnection::tls_handshake() {
 
   auto &tlsconf = get_config()->tls;
 
-  if (!tlsconf.insecure &&
-      tls::check_cert(conn_.tls.ssl, addr_, sni_name_) != 0) {
-    connect_blocker_.on_failure();
-    return std::unexpected{Error::TLS_VERIFY_PEER};
+  if (!tlsconf.insecure) {
+    if (auto rv = tls::check_cert(conn_.tls.ssl, addr_, sni_name_); !rv) {
+      connect_blocker_.on_failure();
+      return rv;
+    }
   }
 
   ev_timer_stop(conn_.loop, &conn_.rt);

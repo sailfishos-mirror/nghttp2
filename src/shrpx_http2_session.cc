@@ -426,10 +426,12 @@ std::expected<void, Error> Http2Session::initiate_connection() {
       assert(ssl_ctx_);
 
       if (state_ != Http2SessionState::RESOLVING_NAME) {
-        auto ssl = tls::create_ssl(ssl_ctx_);
-        if (!ssl) {
-          return std::unexpected{Error::CRYPTO};
+        auto maybe_ssl = tls::create_ssl(ssl_ctx_);
+        if (!maybe_ssl) {
+          return std::unexpected{maybe_ssl.error()};
         }
+
+        auto ssl = *maybe_ssl;
 
         tls::setup_downstream_http2_alpn(ssl);
 
@@ -445,8 +447,10 @@ std::expected<void, Error> Http2Session::initiate_connection() {
           SSL_set_tlsext_host_name(conn_.tls.ssl, sni_name.data());
         }
 
-        auto tls_session = tls::reuse_tls_session(addr_->tls_session_cache);
-        if (tls_session) {
+        auto maybe_tls_session =
+          tls::reuse_tls_session(addr_->tls_session_cache);
+        if (maybe_tls_session) {
+          auto tls_session = *maybe_tls_session;
           SSL_set_session(conn_.tls.ssl, tls_session);
           SSL_SESSION_free(tls_session);
         }
@@ -2055,11 +2059,12 @@ std::expected<void, Error> Http2Session::tls_handshake() {
     Log{INFO, this} << "SSL/TLS handshake completed";
   }
 
-  if (!get_config()->tls.insecure &&
-      tls::check_cert(conn_.tls.ssl, addr_, raddr_) != 0) {
-    downstream_failure(addr_, raddr_);
+  if (!get_config()->tls.insecure) {
+    if (auto rv = tls::check_cert(conn_.tls.ssl, addr_, raddr_); !rv) {
+      downstream_failure(addr_, raddr_);
 
-    return std::unexpected{Error::TLS_VERIFY_PEER};
+      return rv;
+    }
   }
 
   read_ = &Http2Session::read_tls;

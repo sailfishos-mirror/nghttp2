@@ -1654,9 +1654,9 @@ void fill_default_config(Config *config) {
   tlsconf.client.ciphers = nghttp2::tls::DEFAULT_CIPHER_LIST;
   tlsconf.client.tls13_ciphers = nghttp2::tls::DEFAULT_TLS13_CIPHER_LIST;
   tlsconf.min_proto_version =
-    tls::proto_version_from_string(DEFAULT_TLS_MIN_PROTO_VERSION);
+    tls::proto_version_from_string(DEFAULT_TLS_MIN_PROTO_VERSION).value();
   tlsconf.max_proto_version =
-    tls::proto_version_from_string(DEFAULT_TLS_MAX_PROTO_VERSION);
+    tls::proto_version_from_string(DEFAULT_TLS_MAX_PROTO_VERSION).value();
   tlsconf.max_early_data = 16_k;
   tlsconf.groups = "X25519:P-256:P-384:P-521"sv;
 
@@ -3411,7 +3411,7 @@ int process_options(
     return -1;
   }
 
-  if (tls::set_alpn_prefs(tlsconf.alpn_prefs, tlsconf.alpn_list) != 0) {
+  if (!tls::set_alpn_prefs(tlsconf.alpn_prefs, tlsconf.alpn_list)) {
     return -1;
   }
 

@@ -197,10 +197,12 @@ int LiveCheck::initiate_connection() {
   if (!dns_query_ && addr_->tls) {
     assert(ssl_ctx_);
 
-    auto ssl = tls::create_ssl(ssl_ctx_);
-    if (!ssl) {
+    auto maybe_ssl = tls::create_ssl(ssl_ctx_);
+    if (!maybe_ssl) {
       return -1;
     }
+
+    auto ssl = *maybe_ssl;
 
     switch (addr_->proto) {
     case Proto::HTTP1:
@@ -295,8 +297,9 @@ int LiveCheck::initiate_connection() {
       SSL_set_tlsext_host_name(conn_.tls.ssl, sni_name.data());
     }
 
-    auto session = tls::reuse_tls_session(addr_->tls_session_cache);
-    if (session) {
+    auto maybe_session = tls::reuse_tls_session(addr_->tls_session_cache);
+    if (maybe_session) {
+      auto session = *maybe_session;
       SSL_set_session(conn_.tls.ssl, session);
       SSL_SESSION_free(session);
     }
@@ -385,9 +388,10 @@ std::expected<void, Error> LiveCheck::tls_handshake() {
     Log{INFO} << "SSL/TLS handshake completed";
   }
 
-  if (!get_config()->tls.insecure &&
-      tls::check_cert(conn_.tls.ssl, addr_, raddr_) != 0) {
-    return std::unexpected{Error::TLS_VERIFY_PEER};
+  if (!get_config()->tls.insecure) {
+    if (auto rv = tls::check_cert(conn_.tls.ssl, addr_, raddr_); !rv) {
+      return rv;
+    }
   }
 
   // Check negotiated ALPN
