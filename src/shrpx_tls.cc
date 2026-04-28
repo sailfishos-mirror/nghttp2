@@ -2498,39 +2498,46 @@ std::string_view get_x509_serial(BlockAllocator &balloc, X509 *x) {
 namespace {
 // Performs conversion from |at| to time_t.
 std::expected<time_t, Error> time_t_from_asn1_time(const ASN1_TIME *at) {
-  int rv;
-
 #if defined(NGHTTP2_GENUINE_OPENSSL) ||                                        \
-  defined(NGHTTP2_OPENSSL_IS_LIBRESSL) || defined(NGHTTP2_OPENSSL_IS_WOLFSSL)
+  defined(NGHTTP2_OPENSSL_IS_LIBRESSL) ||                                      \
+  defined(NGHTTP2_OPENSSL_IS_WOLFSSL) || defined(OPENSSL_IS_AWSLC)
   struct tm tm;
-  rv = ASN1_TIME_to_tm(at, &tm);
-  if (rv != 1) {
+  if (!ASN1_TIME_to_tm(at, &tm)) {
     return std::unexpected{Error::CRYPTO};
   }
 
   return nghttp2_timegm(&tm);
 #else  // !defined(NGHTTP2_GENUINE_OPENSSL) &&
        // !defined(NGHTTP2_OPENSSL_IS_LIBRESSL) &&
-       // !defined(NGHTTP2_OPENSSL_IS_WOLFSSL)
-  auto b = BIO_new(BIO_s_mem());
-  if (!b) {
+       // !defined(NGHTTP2_OPENSSL_IS_WOLFSSL) &&
+       // !defined(OPENSSL_IS_AWSLC)
+  auto epoch = ASN1_TIME_set(nullptr, 0);
+  if (!epoch) {
     return std::unexpected{Error::CRYPTO};
   }
 
-  auto bio_deleter = defer([b] { BIO_free(b); });
+  auto epoch_d = defer([epoch] { ASN1_TIME_free(epoch); });
 
-  rv = ASN1_TIME_print(b, at);
-  if (rv != 1) {
+  int days, secs;
+
+  if (!ASN1_TIME_diff(&days, &secs, epoch, at)) {
     return std::unexpected{Error::CRYPTO};
   }
 
-  char *s;
-  auto slen = BIO_get_mem_data(b, &s);
-  return util::parse_openssl_asn1_time_print(
-    std::string_view{s, static_cast<size_t>(slen)});
+  if (days < 0 || secs < 0) {
+    return std::unexpected{Error::INTERNAL};
+  }
+
+  auto t = static_cast<uint64_t>(days) * 86400 + static_cast<uint64_t>(secs);
+  if (t > std::numeric_limits<time_t>::max()) {
+    return std::unexpected{Error::INTEGER_OVERFLOW};
+  }
+
+  return static_cast<time_t>(t);
 #endif // !defined(NGHTTP2_GENUINE_OPENSSL) &&
        // !defined(NGHTTP2_OPENSSL_IS_LIBRESSL) &&
-       // !defined(NGHTTP2_OPENSSL_IS_WOLFSSL)
+       // !defined(NGHTTP2_OPENSSL_IS_WOLFSSL) &&
+       // !defined(OPENSSL_IS_AWSLC)
 }
 } // namespace
 
