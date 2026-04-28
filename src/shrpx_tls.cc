@@ -131,14 +131,15 @@ int verify_callback(int preverify_ok, X509_STORE_CTX *ctx) {
 }
 } // namespace
 
-int set_alpn_prefs(std::vector<unsigned char> &out,
-                   const std::vector<std::string_view> &protos) {
+std::expected<void, Error>
+set_alpn_prefs(std::vector<unsigned char> &out,
+               const std::vector<std::string_view> &protos) {
   size_t len = 0;
 
   for (const auto &proto : protos) {
     if (proto.size() > 255) {
       Log{FATAL} << "Too long ALPN identifier: " << proto.size();
-      return -1;
+      return std::unexpected{Error::INVALID_ARGUMENT};
     }
 
     len += 1 + proto.size();
@@ -146,7 +147,7 @@ int set_alpn_prefs(std::vector<unsigned char> &out,
 
   if (len > (1 << 16) - 1) {
     Log{FATAL} << "Too long ALPN identifier list: " << len;
-    return -1;
+    return std::unexpected{Error::INVALID_ARGUMENT};
   }
 
   out.resize(len);
@@ -157,7 +158,7 @@ int set_alpn_prefs(std::vector<unsigned char> &out,
     ptr = std::ranges::copy(proto, ptr).out;
   }
 
-  return 0;
+  return {};
 }
 
 namespace {

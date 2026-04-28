@@ -212,8 +212,9 @@ bool check_http2_requirement(SSL *ssl);
 nghttp2_ssl_op_type
 create_tls_proto_mask(const std::vector<std::string_view> &tls_proto_list);
 
-int set_alpn_prefs(std::vector<unsigned char> &out,
-                   const std::vector<std::string_view> &protos);
+std::expected<void, Error>
+set_alpn_prefs(std::vector<unsigned char> &out,
+               const std::vector<std::string_view> &protos);
 
 // Setups server side SSL_CTX.  This function inspects get_config()
 // and if upstream_no_tls is true, returns nullptr.  Otherwise

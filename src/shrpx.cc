@@ -3411,7 +3411,7 @@ int process_options(
     return -1;
   }
 
-  if (tls::set_alpn_prefs(tlsconf.alpn_prefs, tlsconf.alpn_list) != 0) {
+  if (!tls::set_alpn_prefs(tlsconf.alpn_prefs, tlsconf.alpn_list)) {
     return -1;
   }
 
