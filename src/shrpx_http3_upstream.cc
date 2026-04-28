@@ -925,10 +925,10 @@ void Http3Upstream::send_packet(const ngtcp2_path &path,
                                 size_t gso_size) {
   auto faddr = static_cast<UpstreamAddr *>(path.user_data);
 
-  auto [rest, rv] =
+  auto rest =
     send_packet(faddr, path.remote.addr, path.remote.addrlen, path.local.addr,
                 path.local.addrlen, pi, data, gso_size);
-  if (rv == SHRPX_ERR_SEND_BLOCKED) {
+  if (!rest.empty()) {
     on_send_blocked(path, pi, rest, rest.size());
 
     signal_write_upstream_addr(faddr);
@@ -1787,7 +1787,7 @@ Http3Upstream::on_read(const UpstreamAddr *faddr, const Address &remote_addr,
   return {};
 }
 
-std::pair<std::span<const uint8_t>, int>
+std::span<const uint8_t>
 Http3Upstream::send_packet(const UpstreamAddr *faddr, const sockaddr *remote_sa,
                            socklen_t remote_salen, const sockaddr *local_sa,
                            socklen_t local_salen, const ngtcp2_pkt_info &pi,
@@ -1803,48 +1803,50 @@ Http3Upstream::send_packet(const UpstreamAddr *faddr, const sockaddr *remote_sa,
 #if EAGAIN != EWOULDBLOCK
         case -EWOULDBLOCK:
 #endif // EAGAIN != EWOULDBLOCK
-          return {data, SHRPX_ERR_SEND_BLOCKED};
+          return data;
         default:
-          return {data, -1};
+          // Let the packet lost.
+          return {};
         }
       }
 
       data = data.subspan(len);
     }
 
-    return {{}, 0};
+    return {};
   }
 
   auto rv = quic_send_packet(faddr, remote_sa, remote_salen, local_sa,
                              local_salen, pi, data, gso_size);
-  switch (rv) {
-  case 0:
-    return {{}, 0};
-    // With GSO, sendmsg may fail with EINVAL if UDP payload is too
-    // large.
-  case -EINVAL:
-  case -EMSGSIZE:
-    // Let the packet lost.
-    break;
-  case -EAGAIN:
+  if (rv != 0) {
+    // In case of errors other than EAGAIN, let the packet lost.  We
+    // have packet which is expected to fail to send (e.g., path
+    // validation to old path).
+    switch (rv) {
+    case -EAGAIN:
 #if EAGAIN != EWOULDBLOCK
-  case -EWOULDBLOCK:
+    case -EWOULDBLOCK:
 #endif // EAGAIN != EWOULDBLOCK
-    return {data, SHRPX_ERR_SEND_BLOCKED};
-  case -EIO:
-    if (tx_.no_gso) {
-      break;
+      return data;
+    case -EIO:
+      if (tx_.no_gso) {
+        return {};
+      }
+
+      tx_.no_gso = true;
+
+      return send_packet(faddr, remote_sa, remote_salen, local_sa, local_salen,
+                         pi, data, gso_size);
+      // With GSO, sendmsg may fail with EINVAL if UDP payload is too
+      // large.
+    case -EINVAL:
+    case -EMSGSIZE:
+    default:
+      return {};
     }
-
-    tx_.no_gso = true;
-
-    return send_packet(faddr, remote_sa, remote_salen, local_sa, local_salen,
-                       pi, data, gso_size);
-  default:
-    break;
   }
 
-  return {{}, -1};
+  return {};
 }
 
 void Http3Upstream::on_send_blocked(const ngtcp2_path &path,
@@ -1871,10 +1873,10 @@ void Http3Upstream::send_blocked_packet() {
 
   auto &p = tx_.blocked;
 
-  auto [rest, rv] = send_packet(
-    p.faddr, p.remote_addr.as_sockaddr(), p.remote_addr.size(),
-    p.local_addr.as_sockaddr(), p.local_addr.size(), p.pi, p.data, p.gso_size);
-  if (rv == SHRPX_ERR_SEND_BLOCKED) {
+  auto rest = send_packet(p.faddr, p.remote_addr.as_sockaddr(),
+                          p.remote_addr.size(), p.local_addr.as_sockaddr(),
+                          p.local_addr.size(), p.pi, p.data, p.gso_size);
+  if (!rest.empty()) {
     p.data = rest;
 
     signal_write_upstream_addr(p.faddr);
@@ -1938,10 +1940,10 @@ Http3Upstream::send_connection_close(const ngtcp2_ccerr &ccerr) {
   std::ranges::copy_n(std::ranges::begin(buf), as_signed(conn_closelen_),
                       conn_close_.get());
 
-  send_packet(static_cast<UpstreamAddr *>(ps.path.user_data),
-              ps.path.remote.addr, ps.path.remote.addrlen, ps.path.local.addr,
-              ps.path.local.addrlen, pi, {conn_close_.get(), conn_closelen_},
-              conn_closelen_);
+  quic_send_packet(static_cast<UpstreamAddr *>(ps.path.user_data),
+                   ps.path.remote.addr, ps.path.remote.addrlen,
+                   ps.path.local.addr, ps.path.local.addrlen, pi,
+                   {conn_close_.get(), conn_closelen_}, conn_closelen_);
 
   return std::unexpected{Error::DONE};
 }

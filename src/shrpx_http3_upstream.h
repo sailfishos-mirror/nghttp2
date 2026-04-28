@@ -173,7 +173,10 @@ public:
   std::expected<void, Error> check_shutdown();
   std::expected<void, Error> start_graceful_shutdown();
   std::expected<void, Error> submit_goaway();
-  std::pair<std::span<const uint8_t>, int>
+  // send_packet sends packet(s).  If send is blocked, this function
+  // returns the packet(s) that are not yet sent.  This function
+  // returns empty span if all packet(s) are sent.
+  std::span<const uint8_t>
   send_packet(const UpstreamAddr *faddr, const sockaddr *remote_sa,
               socklen_t remote_salen, const sockaddr *local_sa,
               socklen_t local_salen, const ngtcp2_pkt_info &pi,
