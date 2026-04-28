@@ -165,17 +165,16 @@ mrb_value env_get_tls_client_fingerprint_md(mrb_state *mrb, const EVP_MD *md) {
 
   // Currently the largest hash value is SHA-256, which is 32 bytes.
   std::array<uint8_t, 32> buf;
-  auto slen = tls::get_x509_fingerprint(buf.data(), buf.size(), x, md);
+  auto maybe_fp = tls::get_x509_fingerprint(buf, x, md);
 #if !OPENSSL_3_0_0_API
   X509_free(x);
 #endif // !OPENSSL_3_0_0_API
-  if (slen == -1) {
+  if (!maybe_fp) {
     mrb_raise(mrb, E_RUNTIME_ERROR, "could not compute client fingerprint");
   }
 
   auto &balloc = downstream->get_block_allocator();
-  auto f =
-    util::format_hex(balloc, std::span{buf.data(), static_cast<size_t>(slen)});
+  auto f = util::format_hex(balloc, *maybe_fp);
   return mrb_str_new(mrb, f.data(), static_cast<mrb_int>(f.size()));
 }
 } // namespace

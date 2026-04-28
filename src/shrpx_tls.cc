@@ -2440,13 +2440,13 @@ std::expected<int, Error> proto_version_from_string(std::string_view v) {
   return std::unexpected{Error::INVALID_ARGUMENT};
 }
 
-ssize_t get_x509_fingerprint(uint8_t *dst, size_t dstlen, const X509 *x,
-                             const EVP_MD *md) {
-  auto len = static_cast<unsigned int>(dstlen);
-  if (X509_digest(x, md, dst, &len) != 1) {
-    return -1;
+std::expected<std::span<uint8_t>, Error>
+get_x509_fingerprint(std::span<uint8_t> dst, const X509 *x, const EVP_MD *md) {
+  auto len = static_cast<unsigned int>(dst.size());
+  if (X509_digest(x, md, dst.data(), &len) != 1) {
+    return std::unexpected{Error::CRYPTO};
   }
-  return len;
+  return dst.first(len);
 }
 
 namespace {

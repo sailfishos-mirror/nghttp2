@@ -288,12 +288,12 @@ reuse_tls_session(const TLSSessionCache &addr);
 // OpenSSL header file.
 std::expected<int, Error> proto_version_from_string(std::string_view v);
 
-// Stores fingerprint of |x| in |dst| of length |dstlen|.  |md|
-// specifies hash function to use, and |dstlen| must be large enough
-// to include hash value (e.g., 32 bytes for SHA-256).  This function
-// returns the number of bytes written in |dst|, or -1.
-ssize_t get_x509_fingerprint(uint8_t *dst, size_t dstlen, const X509 *x,
-                             const EVP_MD *md);
+// Stores fingerprint of |x| in |dst|.  |md| specifies hash function
+// to use, and |dst| must be large enough to include hash value (e.g.,
+// 32 bytes for SHA-256).  This function returns the span that just
+// includes the fingerprint.
+std::expected<std::span<uint8_t>, Error>
+get_x509_fingerprint(std::span<uint8_t> dst, const X509 *x, const EVP_MD *md);
 
 // Returns subject name of |x|.  If this function fails to get subject
 // name, it returns an empty string.

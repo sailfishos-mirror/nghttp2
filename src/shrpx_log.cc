@@ -662,19 +662,19 @@ void upstream_accesslog(const std::vector<LogFragment> &lfv,
         break;
       }
       std::array<uint8_t, 32> buf;
-      auto len = tls::get_x509_fingerprint(
-        buf.data(), buf.size(), x,
+      auto maybe_fp = tls::get_x509_fingerprint(
+        buf, x,
         lf.type == LogFragmentType::TLS_CLIENT_FINGERPRINT_SHA256
           ? nghttp2::tls::sha256()
           : nghttp2::tls::sha1());
 #if !OPENSSL_3_0_0_API
       X509_free(x);
 #endif // !OPENSSL_3_0_0_API
-      if (len <= 0) {
+      if (!maybe_fp) {
         p = copy('-', p);
         break;
       }
-      p = copy_hex_low({buf.data(), static_cast<size_t>(len)}, p);
+      p = copy_hex_low(*maybe_fp, p);
       break;
     }
     case LogFragmentType::TLS_CLIENT_ISSUER_NAME:
