@@ -114,6 +114,11 @@ struct ConnectionID {
 
 ngtcp2_tstamp quic_timestamp();
 
+std::expected<void, Error> quic_send_packet(const UpstreamAddr *faddr,
+                                            const Address &remote_sa,
+                                            const Address &local_sa,
+                                            std::span<const uint8_t> data);
+
 int quic_send_packet(const UpstreamAddr *faddr, const sockaddr *remote_sa,
                      socklen_t remote_salen, const sockaddr *local_sa,
                      socklen_t local_salen, const ngtcp2_pkt_info &pi,

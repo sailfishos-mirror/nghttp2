@@ -851,7 +851,6 @@ int ConnectionHandler::quic_ipc_read() {
 
     auto quic_conn_handler = single_worker_->get_quic_connection_handler();
 
-    // Ignore return value
     quic_conn_handler->handle_packet(faddr, pkt->remote_addr, pkt->local_addr,
                                      pkt->pi, pkt->data);
 
