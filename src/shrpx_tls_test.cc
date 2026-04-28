@@ -262,7 +262,7 @@ void test_shrpx_tls_verify_numeric_hostname(void) {
     auto addr = parse_addr(ipaddr.data());
     auto rv = tls::verify_numeric_hostname(cert, ipaddr, &addr);
 
-    assert_int(0, ==, rv);
+    assert_true(rv.has_value());
 
     X509_free(cert);
   }
@@ -274,7 +274,7 @@ void test_shrpx_tls_verify_numeric_hostname(void) {
     auto addr = parse_addr(ipaddr.data());
     auto rv = tls::verify_numeric_hostname(cert, ipaddr, &addr);
 
-    assert_int(0, ==, rv);
+    assert_true(rv.has_value());
 
     X509_free(cert);
   }
@@ -286,7 +286,7 @@ void test_shrpx_tls_verify_numeric_hostname(void) {
     auto addr = parse_addr(ipaddr.data());
     auto rv = tls::verify_numeric_hostname(cert, ipaddr, &addr);
 
-    assert_int(-1, ==, rv);
+    assert_false(rv.has_value());
 
     X509_free(cert);
   }
@@ -298,7 +298,7 @@ void test_shrpx_tls_verify_numeric_hostname(void) {
     auto addr = parse_addr(ipaddr.data());
     auto rv = tls::verify_numeric_hostname(cert, ipaddr, &addr);
 
-    assert_int(-1, ==, rv);
+    assert_false(rv.has_value());
 
     X509_free(cert);
   }
@@ -310,7 +310,7 @@ void test_shrpx_tls_verify_numeric_hostname(void) {
     auto addr = parse_addr(ipaddr.data());
     auto rv = tls::verify_numeric_hostname(cert, ipaddr, &addr);
 
-    assert_int(0, ==, rv);
+    assert_true(rv.has_value());
 
     X509_free(cert);
   }
@@ -322,7 +322,7 @@ void test_shrpx_tls_verify_dns_hostname(void) {
     auto cert = load_cert(NGHTTP2_SRC_DIR "/testdata/verify_hostname.crt");
     auto rv = tls::verify_dns_hostname(cert, "nghttp2.example.com"sv);
 
-    assert_int(0, ==, rv);
+    assert_true(rv.has_value());
 
     X509_free(cert);
   }
@@ -332,7 +332,7 @@ void test_shrpx_tls_verify_dns_hostname(void) {
     auto cert = load_cert(NGHTTP2_SRC_DIR "/testdata/verify_hostname.crt");
     auto rv = tls::verify_dns_hostname(cert, "www.nghttp2.example.com"sv);
 
-    assert_int(0, ==, rv);
+    assert_true(rv.has_value());
 
     X509_free(cert);
   }
@@ -342,7 +342,7 @@ void test_shrpx_tls_verify_dns_hostname(void) {
     auto cert = load_cert(NGHTTP2_SRC_DIR "/testdata/verify_hostname.crt");
     auto rv = tls::verify_dns_hostname(cert, "localhost"sv);
 
-    assert_int(-1, ==, rv);
+    assert_false(rv.has_value());
 
     X509_free(cert);
   }
@@ -352,7 +352,7 @@ void test_shrpx_tls_verify_dns_hostname(void) {
     auto cert = load_cert(NGHTTP2_SRC_DIR "/testdata/nosan.crt");
     auto rv = tls::verify_dns_hostname(cert, "localhost"sv);
 
-    assert_int(0, ==, rv);
+    assert_true(rv.has_value());
 
     X509_free(cert);
   }

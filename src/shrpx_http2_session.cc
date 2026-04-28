@@ -2057,11 +2057,12 @@ std::expected<void, Error> Http2Session::tls_handshake() {
     Log{INFO, this} << "SSL/TLS handshake completed";
   }
 
-  if (!get_config()->tls.insecure &&
-      tls::check_cert(conn_.tls.ssl, addr_, raddr_) != 0) {
-    downstream_failure(addr_, raddr_);
+  if (!get_config()->tls.insecure) {
+    if (auto rv = tls::check_cert(conn_.tls.ssl, addr_, raddr_); !rv) {
+      downstream_failure(addr_, raddr_);
 
-    return std::unexpected{Error::TLS_VERIFY_PEER};
+      return rv;
+    }
   }
 
   read_ = &Http2Session::read_tls;

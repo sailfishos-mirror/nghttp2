@@ -387,9 +387,10 @@ std::expected<void, Error> LiveCheck::tls_handshake() {
     Log{INFO} << "SSL/TLS handshake completed";
   }
 
-  if (!get_config()->tls.insecure &&
-      tls::check_cert(conn_.tls.ssl, addr_, raddr_) != 0) {
-    return std::unexpected{Error::TLS_VERIFY_PEER};
+  if (!get_config()->tls.insecure) {
+    if (auto rv = tls::check_cert(conn_.tls.ssl, addr_, raddr_); !rv) {
+      return rv;
+    }
   }
 
   // Check negotiated ALPN

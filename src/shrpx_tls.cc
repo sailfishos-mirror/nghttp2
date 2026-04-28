@@ -1799,8 +1799,9 @@ std::string_view get_common_name(X509 *cert) {
 }
 } // namespace
 
-int verify_numeric_hostname(X509 *cert, std::string_view hostname,
-                            const Address *addr) {
+std::expected<void, Error> verify_numeric_hostname(X509 *cert,
+                                                   std::string_view hostname,
+                                                   const Address *addr) {
   auto [saddr, saddrlen] = std::visit(
     [](auto &&arg) -> std::tuple<const void *, size_t> {
       using T = std::decay_t<decltype(arg)>;
@@ -1818,7 +1819,7 @@ int verify_numeric_hostname(X509 *cert, std::string_view hostname,
     addr->skaddr);
 
   if (saddrlen == 0) {
-    return -1;
+    return std::unexpected{Error::TLS_VERIFY_PEER};
   }
 
   auto altnames = static_cast<GENERAL_NAMES *>(
@@ -1843,18 +1844,18 @@ int verify_numeric_hostname(X509 *cert, std::string_view hostname,
 
       ip_found = true;
       if (saddrlen == ip_addrlen && memcmp(saddr, ip_addr, ip_addrlen) == 0) {
-        return 0;
+        return {};
       }
     }
 
     if (ip_found) {
-      return -1;
+      return std::unexpected{Error::TLS_VERIFY_PEER};
     }
   }
 
   auto cn = get_common_name(cert);
   if (cn.empty()) {
-    return -1;
+    return std::unexpected{Error::TLS_VERIFY_PEER};
   }
 
   // cn is not NULL terminated
@@ -1862,13 +1863,14 @@ int verify_numeric_hostname(X509 *cert, std::string_view hostname,
   OPENSSL_free(const_cast<char *>(cn.data()));
 
   if (rv) {
-    return 0;
+    return {};
   }
 
-  return -1;
+  return std::unexpected{Error::TLS_VERIFY_PEER};
 }
 
-int verify_dns_hostname(X509 *cert, std::string_view hostname) {
+std::expected<void, Error> verify_dns_hostname(X509 *cert,
+                                               std::string_view hostname) {
   auto altnames = static_cast<GENERAL_NAMES *>(
     X509_get_ext_d2i(cert, NID_subject_alt_name, nullptr, nullptr));
   if (altnames) {
@@ -1907,27 +1909,27 @@ int verify_dns_hostname(X509 *cert, std::string_view hostname) {
 
       if (tls_hostname_match(as_string_view(name, static_cast<size_t>(len)),
                              hostname)) {
-        return 0;
+        return {};
       }
     }
 
     // RFC 6125, section 6.4.4. says that client MUST not seek a match
     // for CN if a dns dNSName is found.
     if (dns_found) {
-      return -1;
+      return std::unexpected{Error::TLS_VERIFY_PEER};
     }
   }
 
   auto cn = get_common_name(cert);
   if (cn.empty()) {
-    return -1;
+    return std::unexpected{Error::TLS_VERIFY_PEER};
   }
 
   if (cn[cn.size() - 1] == '.') {
     if (cn.size() == 1) {
       OPENSSL_free(const_cast<char *>(cn.data()));
 
-      return -1;
+      return std::unexpected{Error::TLS_VERIFY_PEER};
     }
     cn = std::string_view{cn.data(), cn.size() - 1};
   }
@@ -1935,12 +1937,16 @@ int verify_dns_hostname(X509 *cert, std::string_view hostname) {
   auto rv = tls_hostname_match(cn, hostname);
   OPENSSL_free(const_cast<char *>(cn.data()));
 
-  return rv ? 0 : -1;
+  if (rv) {
+    return {};
+  }
+
+  return std::unexpected{Error::TLS_VERIFY_PEER};
 }
 
 namespace {
-int verify_hostname(X509 *cert, std::string_view hostname,
-                    const Address *addr) {
+std::expected<void, Error>
+verify_hostname(X509 *cert, std::string_view hostname, const Address *addr) {
   if (util::numeric_host(hostname.data())) {
     return verify_numeric_hostname(cert, hostname, addr);
   }
@@ -1949,7 +1955,8 @@ int verify_hostname(X509 *cert, std::string_view hostname,
 }
 } // namespace
 
-int check_cert(SSL *ssl, const Address *addr, std::string_view host) {
+std::expected<void, Error> check_cert(SSL *ssl, const Address *addr,
+                                      std::string_view host) {
 #if OPENSSL_3_0_0_API
   auto cert = SSL_get0_peer_certificate(ssl);
 #else  // !OPENSSL_3_0_0_API
@@ -1959,20 +1966,21 @@ int check_cert(SSL *ssl, const Address *addr, std::string_view host) {
     // By the protocol definition, TLS server always sends certificate
     // if it has.  If certificate cannot be retrieved, authentication
     // without certificate is used, such as PSK.
-    return 0;
+    return {};
   }
 #if !OPENSSL_3_0_0_API
   auto cert_deleter = defer([cert] { X509_free(cert); });
 #endif // !OPENSSL_3_0_0_API
 
-  if (verify_hostname(cert, host, addr) != 0) {
+  if (auto rv = verify_hostname(cert, host, addr); !rv) {
     Log{ERROR} << "Certificate verification failed: hostname does not match";
-    return -1;
+    return rv;
   }
-  return 0;
+  return {};
 }
 
-int check_cert(SSL *ssl, const DownstreamAddr *addr, const Address *raddr) {
+std::expected<void, Error> check_cert(SSL *ssl, const DownstreamAddr *addr,
+                                      const Address *raddr) {
   auto hostname = addr->sni.empty() ? addr->host : addr->sni;
   return check_cert(ssl, raddr, hostname);
 }

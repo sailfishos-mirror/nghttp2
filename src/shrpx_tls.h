@@ -107,21 +107,23 @@ accept_connection(Worker *worker, int fd, const sockaddr *addr,
                   socklen_t addrlen, const UpstreamAddr *faddr);
 
 // Check peer's certificate against given |address| and |host|.
-int check_cert(SSL *ssl, const Address *addr, std::string_view host);
+std::expected<void, Error> check_cert(SSL *ssl, const Address *addr,
+                                      std::string_view host);
 // Check peer's certificate against given host name described in
 // |addr| and numeric address in |raddr|.  Note that |raddr| might not
 // point to &addr->addr.
-int check_cert(SSL *ssl, const DownstreamAddr *addr, const Address *raddr);
+std::expected<void, Error> check_cert(SSL *ssl, const DownstreamAddr *addr,
+                                      const Address *raddr);
 
 // Verify |cert| using numeric IP address.  |hostname| and |addr|
-// should contain the same numeric IP address.  This function returns
-// 0 if it succeeds, or -1.
-int verify_numeric_hostname(X509 *cert, std::string_view hostname,
-                            const Address *addr);
+// should contain the same numeric IP address.
+std::expected<void, Error> verify_numeric_hostname(X509 *cert,
+                                                   std::string_view hostname,
+                                                   const Address *addr);
 
-// Verify |cert| using DNS name hostname.  This function returns 0 if
-// it succeeds, or -1.
-int verify_dns_hostname(X509 *cert, std::string_view hostname);
+// Verify |cert| using DNS name hostname.
+std::expected<void, Error> verify_dns_hostname(X509 *cert,
+                                               std::string_view hostname);
 
 struct WildcardRevPrefix {
   WildcardRevPrefix(std::string_view prefix, size_t idx)
