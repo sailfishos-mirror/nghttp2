@@ -63,6 +63,20 @@ ngtcp2_tstamp quic_timestamp() {
       .count());
 }
 
+std::expected<void, Error> quic_send_packet(const UpstreamAddr *faddr,
+                                            const Address &remote_sa,
+                                            const Address &local_sa,
+                                            std::span<const uint8_t> data) {
+  auto rv = quic_send_packet(faddr, remote_sa.as_sockaddr(), remote_sa.size(),
+                             local_sa.as_sockaddr(), local_sa.size(),
+                             ngtcp2_pkt_info{}, data, data.size());
+  if (rv != 0) {
+    return std::unexpected{Error::SYSCALL};
+  }
+
+  return {};
+}
+
 int quic_send_packet(const UpstreamAddr *faddr, const sockaddr *remote_sa,
                      socklen_t remote_salen, const sockaddr *local_sa,
                      socklen_t local_salen, const ngtcp2_pkt_info &pi,
