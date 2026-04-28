@@ -1762,13 +1762,13 @@ bool tls_hostname_match(std::string_view pattern, std::string_view hostname) {
 }
 
 namespace {
-// if return value is not empty, std::string_view.data() must be freed
-// using OPENSSL_free().
-std::string_view get_common_name(X509 *cert) {
+// The returned std::string_view.data() must be freed using
+// OPENSSL_free().  The resulting string might not be NULL-terminated.
+std::expected<std::string_view, Error> get_common_name(X509 *cert) {
   auto subjectname = X509_get_subject_name(cert);
   if (!subjectname) {
     Log{WARN} << "Could not get X509 name object from the certificate.";
-    return ""sv;
+    return std::unexpected{Error::ENTITY_NOT_FOUND};
   }
   int lastpos = -1;
   for (;;) {
@@ -1783,19 +1783,22 @@ std::string_view get_common_name(X509 *cert) {
     if (plen < 0) {
       continue;
     }
-    if (util::contains(p, p + plen, '\0')) {
-      // Embedded NULL is not permitted.
-      continue;
-    }
+
     if (plen == 0) {
       Log{WARN} << "X509 name is empty";
       OPENSSL_free(p);
       continue;
     }
 
+    if (util::contains(p, p + plen, '\0')) {
+      // Embedded NULL is not permitted.
+      OPENSSL_free(p);
+      continue;
+    }
+
     return as_string_view(p, static_cast<size_t>(plen));
   }
-  return ""sv;
+  return std::unexpected{Error::ENTITY_NOT_FOUND};
 }
 } // namespace
 
@@ -1853,20 +1856,20 @@ std::expected<void, Error> verify_numeric_hostname(X509 *cert,
     }
   }
 
-  auto cn = get_common_name(cert);
-  if (cn.empty()) {
+  auto maybe_cn = get_common_name(cert);
+  if (!maybe_cn) {
     return std::unexpected{Error::TLS_VERIFY_PEER};
   }
 
-  // cn is not NULL terminated
-  auto rv = hostname == cn;
-  OPENSSL_free(const_cast<char *>(cn.data()));
+  auto cn = *maybe_cn;
+  auto cn_d = defer([cn] { OPENSSL_free(const_cast<char *>(cn.data())); });
 
-  if (rv) {
-    return {};
+  // cn is not NULL terminated
+  if (hostname != cn) {
+    return std::unexpected{Error::TLS_VERIFY_PEER};
   }
 
-  return std::unexpected{Error::TLS_VERIFY_PEER};
+  return {};
 }
 
 std::expected<void, Error> verify_dns_hostname(X509 *cert,
@@ -1920,28 +1923,28 @@ std::expected<void, Error> verify_dns_hostname(X509 *cert,
     }
   }
 
-  auto cn = get_common_name(cert);
-  if (cn.empty()) {
+  auto maybe_cn = get_common_name(cert);
+  if (!maybe_cn) {
     return std::unexpected{Error::TLS_VERIFY_PEER};
   }
 
+  auto cn = *maybe_cn;
+  auto cn_d = defer([cn] { OPENSSL_free(const_cast<char *>(cn.data())); });
+
+  assert(!cn.empty());
+
   if (cn[cn.size() - 1] == '.') {
     if (cn.size() == 1) {
-      OPENSSL_free(const_cast<char *>(cn.data()));
-
       return std::unexpected{Error::TLS_VERIFY_PEER};
     }
     cn = std::string_view{cn.data(), cn.size() - 1};
   }
 
-  auto rv = tls_hostname_match(cn, hostname);
-  OPENSSL_free(const_cast<char *>(cn.data()));
-
-  if (rv) {
-    return {};
+  if (!tls_hostname_match(cn, hostname)) {
+    return std::unexpected{Error::TLS_VERIFY_PEER};
   }
 
-  return std::unexpected{Error::TLS_VERIFY_PEER};
+  return {};
 }
 
 namespace {
@@ -2181,24 +2184,29 @@ int cert_lookup_tree_add_ssl_ctx(
     }
   }
 
-  auto cn = get_common_name(cert);
-  if (cn.empty()) {
+  auto maybe_cn = get_common_name(cert);
+  if (!maybe_cn) {
     return 0;
   }
 
+  auto cn = *maybe_cn;
+  auto cn_d = defer([cn] { OPENSSL_free(const_cast<char *>(cn.data())); });
+
+  assert(!cn.empty());
+
   if (cn[cn.size() - 1] == '.') {
     if (cn.size() == 1) {
-      OPENSSL_free(const_cast<char *>(cn.data()));
-
       return 0;
     }
 
     cn = std::string_view{cn.data(), cn.size() - 1};
   }
 
-  auto end_buf = util::tolower(cn, std::ranges::begin(buf));
+  if (cn.size() + 1 > buf.size()) {
+    return 0;
+  }
 
-  OPENSSL_free(const_cast<char *>(cn.data()));
+  auto end_buf = util::tolower(cn, std::ranges::begin(buf));
 
   auto idx = lt->add_cert(std::string_view{std::ranges::begin(buf), end_buf},
                           indexed_ssl_ctx.size());
