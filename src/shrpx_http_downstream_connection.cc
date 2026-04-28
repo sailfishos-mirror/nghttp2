@@ -386,10 +386,12 @@ std::expected<void, Error> HttpDownstreamConnection::initiate_connection() {
     if (addr_->tls) {
       assert(ssl_ctx_);
 
-      auto ssl = tls::create_ssl(ssl_ctx_);
-      if (!ssl) {
-        return std::unexpected{Error::CRYPTO};
+      auto maybe_ssl = tls::create_ssl(ssl_ctx_);
+      if (!maybe_ssl) {
+        return std::unexpected{maybe_ssl.error()};
       }
+
+      auto ssl = *maybe_ssl;
 
       tls::setup_downstream_http1_alpn(ssl);
 

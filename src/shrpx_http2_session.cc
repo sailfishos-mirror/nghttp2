@@ -426,10 +426,12 @@ std::expected<void, Error> Http2Session::initiate_connection() {
       assert(ssl_ctx_);
 
       if (state_ != Http2SessionState::RESOLVING_NAME) {
-        auto ssl = tls::create_ssl(ssl_ctx_);
-        if (!ssl) {
-          return std::unexpected{Error::CRYPTO};
+        auto maybe_ssl = tls::create_ssl(ssl_ctx_);
+        if (!maybe_ssl) {
+          return std::unexpected{maybe_ssl.error()};
         }
+
+        auto ssl = *maybe_ssl;
 
         tls::setup_downstream_http2_alpn(ssl);
 

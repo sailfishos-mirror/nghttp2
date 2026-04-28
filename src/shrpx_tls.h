@@ -258,7 +258,7 @@ void setup_downstream_http1_alpn(SSL *ssl);
 // this function returns nullptr.
 std::unique_ptr<CertLookupTree> create_cert_lookup_tree();
 
-SSL *create_ssl(SSL_CTX *ssl_ctx);
+std::expected<SSL *, Error> create_ssl(SSL_CTX *ssl_ctx);
 
 // Returns true if SSL/TLS is enabled on upstream
 bool upstream_tls_enabled(const ConnectionConfig &connconf);

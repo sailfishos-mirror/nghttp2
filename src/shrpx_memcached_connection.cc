@@ -152,11 +152,11 @@ int MemcachedConnection::initiate_connection() {
   assert(conn_.fd == -1);
 
   if (ssl_ctx_) {
-    auto ssl = tls::create_ssl(ssl_ctx_);
-    if (!ssl) {
+    auto maybe_ssl = tls::create_ssl(ssl_ctx_);
+    if (!maybe_ssl) {
       return -1;
     }
-    conn_.set_ssl(ssl);
+    conn_.set_ssl(*maybe_ssl);
     conn_.tls.client_session_cache = &tls_session_cache_;
   }
 

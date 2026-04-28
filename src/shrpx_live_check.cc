@@ -197,10 +197,12 @@ int LiveCheck::initiate_connection() {
   if (!dns_query_ && addr_->tls) {
     assert(ssl_ctx_);
 
-    auto ssl = tls::create_ssl(ssl_ctx_);
-    if (!ssl) {
+    auto maybe_ssl = tls::create_ssl(ssl_ctx_);
+    if (!maybe_ssl) {
       return -1;
     }
+
+    auto ssl = *maybe_ssl;
 
     switch (addr_->proto) {
     case Proto::HTTP1:

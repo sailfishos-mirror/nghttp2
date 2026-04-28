@@ -1643,12 +1643,12 @@ SSL_CTX *create_ssl_client_context(
   return ssl_ctx;
 }
 
-SSL *create_ssl(SSL_CTX *ssl_ctx) {
+std::expected<SSL *, Error> create_ssl(SSL_CTX *ssl_ctx) {
   auto ssl = SSL_new(ssl_ctx);
   if (!ssl) {
     Log{ERROR} << "SSL_new() failed: "
                << ERR_error_string(ERR_get_error(), nullptr);
-    return nullptr;
+    return std::unexpected{Error::CRYPTO};
   }
 
   return ssl;
@@ -1683,10 +1683,13 @@ ClientHandler *accept_connection(Worker *worker, int fd, const sockaddr *addr,
 
     assert(ssl_ctx);
 
-    ssl = create_ssl(ssl_ctx);
-    if (!ssl) {
+    auto maybe_ssl = create_ssl(ssl_ctx);
+    if (!maybe_ssl) {
       return nullptr;
     }
+
+    ssl = *maybe_ssl;
+
     // Disable TLS session ticket if we don't have working ticket
     // keys.
     if (!worker->get_ticket_keys()) {
