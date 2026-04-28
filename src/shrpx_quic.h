@@ -164,9 +164,10 @@ std::expected<void, Error> verify_token(std::span<const uint8_t> token,
                                         const sockaddr *sa, socklen_t salen,
                                         std::span<const uint8_t> secret);
 
-int generate_quic_connection_id_encryption_key(std::span<uint8_t> key,
-                                               std::span<const uint8_t> secret,
-                                               std::span<const uint8_t> salt);
+std::expected<void, Error>
+generate_quic_connection_id_encryption_key(std::span<uint8_t> key,
+                                           std::span<const uint8_t> secret,
+                                           std::span<const uint8_t> salt);
 
 const QUICKeyingMaterial *
 select_quic_keying_material(const QUICKeyingMaterials &qkms, uint8_t km_id);

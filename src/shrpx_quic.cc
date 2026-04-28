@@ -394,9 +394,10 @@ std::expected<void, Error> verify_token(std::span<const uint8_t> token,
   return {};
 }
 
-int generate_quic_connection_id_encryption_key(std::span<uint8_t> key,
-                                               std::span<const uint8_t> secret,
-                                               std::span<const uint8_t> salt) {
+std::expected<void, Error>
+generate_quic_connection_id_encryption_key(std::span<uint8_t> key,
+                                           std::span<const uint8_t> secret,
+                                           std::span<const uint8_t> salt) {
   static constexpr auto info = "connection id encryption key"sv;
   ngtcp2_crypto_md sha256;
   ngtcp2_crypto_md_init(&sha256, reinterpret_cast<void *>(const_cast<EVP_MD *>(
@@ -406,10 +407,10 @@ int generate_quic_connection_id_encryption_key(std::span<uint8_t> key,
                          secret.size(), salt.data(), salt.size(),
                          reinterpret_cast<const uint8_t *>(info.data()),
                          info.size()) != 0) {
-    return -1;
+    return std::unexpected{Error::CRYPTO};
   }
 
-  return 0;
+  return {};
 }
 
 const QUICKeyingMaterial *
