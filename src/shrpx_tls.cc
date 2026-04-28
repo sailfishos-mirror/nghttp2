@@ -2496,9 +2496,8 @@ std::string_view get_x509_serial(BlockAllocator &balloc, X509 *x) {
 }
 
 namespace {
-// Performs conversion from |at| to time_t.  The result is stored in
-// |t|.  This function returns 0 if it succeeds, or -1.
-int time_t_from_asn1_time(time_t &t, const ASN1_TIME *at) {
+// Performs conversion from |at| to time_t.
+std::expected<time_t, Error> time_t_from_asn1_time(const ASN1_TIME *at) {
   int rv;
 
 #if defined(NGHTTP2_GENUINE_OPENSSL) ||                                        \
@@ -2506,58 +2505,51 @@ int time_t_from_asn1_time(time_t &t, const ASN1_TIME *at) {
   struct tm tm;
   rv = ASN1_TIME_to_tm(at, &tm);
   if (rv != 1) {
-    return -1;
+    return std::unexpected{Error::CRYPTO};
   }
 
-  t = nghttp2_timegm(&tm);
+  return nghttp2_timegm(&tm);
 #else  // !defined(NGHTTP2_GENUINE_OPENSSL) &&
        // !defined(NGHTTP2_OPENSSL_IS_LIBRESSL) &&
        // !defined(NGHTTP2_OPENSSL_IS_WOLFSSL)
   auto b = BIO_new(BIO_s_mem());
   if (!b) {
-    return -1;
+    return std::unexpected{Error::CRYPTO};
   }
 
   auto bio_deleter = defer([b] { BIO_free(b); });
 
   rv = ASN1_TIME_print(b, at);
   if (rv != 1) {
-    return -1;
+    return std::unexpected{Error::CRYPTO};
   }
 
   char *s;
   auto slen = BIO_get_mem_data(b, &s);
-  auto maybe_time = util::parse_openssl_asn1_time_print(
+  return util::parse_openssl_asn1_time_print(
     std::string_view{s, static_cast<size_t>(slen)});
-  if (!maybe_time) {
-    return -1;
-  }
-
-  t = *maybe_time;
 #endif // !defined(NGHTTP2_GENUINE_OPENSSL) &&
        // !defined(NGHTTP2_OPENSSL_IS_LIBRESSL) &&
        // !defined(NGHTTP2_OPENSSL_IS_WOLFSSL)
-
-  return 0;
 }
 } // namespace
 
-int get_x509_not_before(time_t &t, X509 *x) {
+std::expected<time_t, Error> get_x509_not_before(X509 *x) {
   auto at = X509_get0_notBefore(x);
   if (!at) {
-    return -1;
+    return std::unexpected{Error::CRYPTO};
   }
 
-  return time_t_from_asn1_time(t, at);
+  return time_t_from_asn1_time(at);
 }
 
-int get_x509_not_after(time_t &t, X509 *x) {
+std::expected<time_t, Error> get_x509_not_after(X509 *x) {
   auto at = X509_get0_notAfter(x);
   if (!at) {
-    return -1;
+    return std::unexpected{Error::CRYPTO};
   }
 
-  return time_t_from_asn1_time(t, at);
+  return time_t_from_asn1_time(at);
 }
 
 #ifdef NGHTTP2_OPENSSL_IS_BORINGSSL

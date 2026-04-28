@@ -303,16 +303,16 @@ mrb_value env_get_tls_client_not_before(mrb_state *mrb, mrb_value self) {
     return mrb_fixnum_value(0);
   }
 
-  time_t t;
-  if (tls::get_x509_not_before(t, x) != 0) {
-    t = 0;
-  }
-
 #if !OPENSSL_3_0_0_API
-  X509_free(x);
+  auto x_d = defer([x] { X509_free(x); });
 #endif // !OPENSSL_3_0_0_API
 
-  return mrb_fixnum_value(t);
+  auto maybe_t = tls::get_x509_not_before(x);
+  if (!maybe_t) {
+    return mrb_fixnum_value(0);
+  }
+
+  return mrb_fixnum_value(*maybe_t);
 }
 } // namespace
 
@@ -337,16 +337,16 @@ mrb_value env_get_tls_client_not_after(mrb_state *mrb, mrb_value self) {
     return mrb_fixnum_value(0);
   }
 
-  time_t t;
-  if (tls::get_x509_not_after(t, x) != 0) {
-    t = 0;
-  }
-
 #if !OPENSSL_3_0_0_API
-  X509_free(x);
+  auto x_d = defer([x] { X509_free(x); });
 #endif // !OPENSSL_3_0_0_API
 
-  return mrb_fixnum_value(t);
+  auto maybe_t = tls::get_x509_not_after(x);
+  if (!maybe_t) {
+    return mrb_fixnum_value(0);
+  }
+
+  return mrb_fixnum_value(*maybe_t);
 }
 } // namespace
 

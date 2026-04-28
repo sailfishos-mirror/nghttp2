@@ -307,13 +307,11 @@ std::string_view get_x509_issuer_name(BlockAllocator &balloc, X509 *x);
 // number, it returns an empty string.  number
 std::string_view get_x509_serial(BlockAllocator &balloc, X509 *x);
 
-// Fills NotBefore of |x| in |t|.  This function returns 0 if it
-// succeeds, or -1.
-int get_x509_not_before(time_t &t, X509 *x);
+// Returns NotBefore of |x|.
+std::expected<time_t, Error> get_x509_not_before(X509 *x);
 
-// Fills NotAfter of |x| in |t|.  This function returns 0 if it
-// succeeds, or -1.
-int get_x509_not_after(time_t &t, X509 *x);
+// Returns NotAfter of |x|.
+std::expected<time_t, Error> get_x509_not_after(X509 *x);
 
 #ifdef NGHTTP2_OPENSSL_IS_BORINGSSL
 // Read HPKE private key from PEM file denoted by |path|.  It only
