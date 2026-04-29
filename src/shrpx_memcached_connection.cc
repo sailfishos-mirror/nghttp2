@@ -148,13 +148,13 @@ void MemcachedConnection::disconnect() {
   do_read_ = do_write_ = &MemcachedConnection::noop;
 }
 
-int MemcachedConnection::initiate_connection() {
+std::expected<void, Error> MemcachedConnection::initiate_connection() {
   assert(conn_.fd == -1);
 
   if (ssl_ctx_) {
     auto maybe_ssl = tls::create_ssl(ssl_ctx_);
     if (!maybe_ssl) {
-      return -1;
+      return std::unexpected{maybe_ssl.error()};
     }
     conn_.set_ssl(*maybe_ssl);
     conn_.tls.client_session_cache = &tls_session_cache_;
@@ -165,7 +165,7 @@ int MemcachedConnection::initiate_connection() {
     auto error = errno;
     Log{WARN, this} << "socket() failed; errno=" << error;
 
-    return -1;
+    return std::unexpected{maybe_fd.error()};
   }
 
   conn_.fd = *maybe_fd;
@@ -179,7 +179,7 @@ int MemcachedConnection::initiate_connection() {
     close(conn_.fd);
     conn_.fd = -1;
 
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
 
   if (ssl_ctx_) {
@@ -209,7 +209,7 @@ int MemcachedConnection::initiate_connection() {
   conn_.wlimit.startw();
   ev_timer_again(conn_.loop, &conn_.wt);
 
-  return 0;
+  return {};
 }
 
 int MemcachedConnection::connected() {
@@ -728,10 +728,12 @@ MemcachedConnection::add_request(std::unique_ptr<MemcachedRequest> req) {
     return {};
   }
 
-  if (conn_.fd == -1 && initiate_connection() != 0) {
-    connect_blocker_.on_failure();
-    disconnect();
-    return std::unexpected{Error::INTERNAL};
+  if (conn_.fd == -1) {
+    if (auto rv = initiate_connection(); !rv) {
+      connect_blocker_.on_failure();
+      disconnect();
+      return rv;
+    }
   }
 
   return {};
@@ -782,7 +784,7 @@ void MemcachedConnection::reconnect_or_fail() {
                 std::make_move_iterator(std::ranges::begin(q)),
                 std::make_move_iterator(std::ranges::end(q)));
 
-  if (initiate_connection() != 0) {
+  if (!initiate_connection()) {
     connect_blocker_.on_failure();
     disconnect();
     return;

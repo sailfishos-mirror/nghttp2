@@ -107,7 +107,7 @@ public:
   void disconnect();
 
   std::expected<void, Error> add_request(std::unique_ptr<MemcachedRequest> req);
-  int initiate_connection();
+  std::expected<void, Error> initiate_connection();
 
   int connected();
   std::expected<void, Error> on_write();
