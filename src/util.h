@@ -598,11 +598,6 @@ constexpr size_t percent_encode_tokenlen(R &&r) noexcept {
 
 std::expected<time_t, Error> parse_http_date(std::string_view s);
 
-// Parses time formatted as "MMM DD HH:MM:SS YYYY [GMT]" (e.g., Feb 3
-// 00:55:52 2015 GMT), which is specifically used by OpenSSL
-// ASN1_TIME_print().
-std::expected<time_t, Error> parse_openssl_asn1_time_print(std::string_view s);
-
 inline constexpr auto upcase_tbl = [] {
   std::array<char, 256> tbl;
 

@@ -606,15 +606,6 @@ std::expected<time_t, Error> parse_http_date(std::string_view s) {
   return nghttp2_timegm_without_yday(&tm);
 }
 
-std::expected<time_t, Error> parse_openssl_asn1_time_print(std::string_view s) {
-  tm tm{};
-  auto r = strptime(s.data(), "%b %d %H:%M:%S %Y GMT", &tm);
-  if (r == nullptr) {
-    return std::unexpected{Error::INVALID_ARGUMENT};
-  }
-  return nghttp2_timegm_without_yday(&tm);
-}
-
 void to_token68(std::string &base64str) {
   for (auto it = std::ranges::begin(base64str);
        it != std::ranges::end(base64str); ++it) {
