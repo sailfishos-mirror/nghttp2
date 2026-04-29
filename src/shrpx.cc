@@ -445,22 +445,22 @@ void shrpx_sd_notifyf(int unset_environment, const char *format, ...) {
 
 namespace {
 void exec_binary() {
-  int rv;
-  sigset_t oldset;
   std::array<char, STRERROR_BUFSIZE> errbuf;
 
   Log{NOTICE} << "Executing new binary";
 
   shrpx_sd_notifyf(0, "RELOADING=1");
 
-  rv = shrpx_signal_block_all(&oldset);
-  if (rv != 0) {
+  auto maybe_oldset = shrpx_signal_block_all();
+  if (!maybe_oldset) {
     auto error = errno;
     Log{ERROR} << "Blocking all signals failed: "
                << xsi_strerror(error, errbuf.data(), errbuf.size());
 
     return;
   }
+
+  const auto &oldset = *maybe_oldset;
 
   auto pid = fork();
 
@@ -473,9 +473,7 @@ void exec_binary() {
       shrpx_sd_notifyf(0, "MAINPID=%d\n", pid);
     }
 
-    rv = shrpx_signal_set(&oldset);
-
-    if (rv != 0) {
+    if (!shrpx_signal_set(&oldset)) {
       auto error = errno;
       Log{FATAL} << "Restoring signal mask failed: "
                  << xsi_strerror(error, errbuf.data(), errbuf.size());
@@ -490,8 +488,7 @@ void exec_binary() {
 
   shrpx_signal_unset_main_proc_ign_handler();
 
-  rv = shrpx_signal_unblock_all();
-  if (rv != 0) {
+  if (!shrpx_signal_unblock_all()) {
     auto error = errno;
     Log{ERROR} << "Unblocking all signals failed: "
                << xsi_strerror(error, errbuf.data(), errbuf.size());
@@ -1300,7 +1297,6 @@ pid_t fork_worker_process(int &main_ipc_fd
 ) {
   std::array<char, STRERROR_BUFSIZE> errbuf;
   int rv;
-  sigset_t oldset;
 
   std::array<int, 2> ipc_fd;
 
@@ -1318,8 +1314,8 @@ pid_t fork_worker_process(int &main_ipc_fd
   }
 #endif // defined(ENABLE_HTTP3)
 
-  rv = shrpx_signal_block_all(&oldset);
-  if (rv != 0) {
+  auto maybe_oldset = shrpx_signal_block_all();
+  if (!maybe_oldset) {
     auto error = errno;
     Log{ERROR} << "Blocking all signals failed: "
                << xsi_strerror(error, errbuf.data(), errbuf.size());
@@ -1329,6 +1325,8 @@ pid_t fork_worker_process(int &main_ipc_fd
 
     return -1;
   }
+
+  const auto &oldset = *maybe_oldset;
 
   auto config = get_config();
 
@@ -1379,8 +1377,7 @@ pid_t fork_worker_process(int &main_ipc_fd
 
     shrpx_signal_set_worker_proc_ign_handler();
 
-    rv = shrpx_signal_unblock_all();
-    if (rv != 0) {
+    if (!shrpx_signal_unblock_all()) {
       auto error = errno;
       Log{FATAL} << "Unblocking all signals failed: "
                  << xsi_strerror(error, errbuf.data(), errbuf.size());
@@ -1436,8 +1433,7 @@ pid_t fork_worker_process(int &main_ipc_fd
                << xsi_strerror(error, errbuf.data(), errbuf.size());
   }
 
-  rv = shrpx_signal_set(&oldset);
-  if (rv != 0) {
+  if (!shrpx_signal_set(&oldset)) {
     auto error = errno;
     Log{FATAL} << "Restoring signal mask failed: "
                << xsi_strerror(error, errbuf.data(), errbuf.size());
