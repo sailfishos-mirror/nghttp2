@@ -446,8 +446,8 @@ std::expected<void, Error> LiveCheck::read_tls() {
       return {};
     }
 
-    if (on_read(data) != 0) {
-      return std::unexpected{Error::INTERNAL};
+    if (auto rv = on_read(data); !rv) {
+      return rv;
     }
   }
 }
@@ -460,8 +460,8 @@ std::expected<void, Error> LiveCheck::write_tls() {
   for (;;) {
     auto data = wb_.peek();
     if (data.empty()) {
-      if (on_write() != 0) {
-        return std::unexpected{Error::INTERNAL};
+      if (auto rv = on_write(); !rv) {
+        return rv;
       }
 
       data = wb_.peek();
@@ -511,8 +511,8 @@ std::expected<void, Error> LiveCheck::read_clear() {
       return {};
     }
 
-    if (on_read(data) != 0) {
-      return std::unexpected{Error::INTERNAL};
+    if (auto rv = on_read(data); !rv) {
+      return rv;
     }
   }
 }
@@ -523,8 +523,8 @@ std::expected<void, Error> LiveCheck::write_clear() {
   for (;;) {
     auto data = wb_.peek();
     if (data.empty()) {
-      if (on_write() != 0) {
-        return std::unexpected{Error::INTERNAL};
+      if (auto rv = on_write(); !rv) {
+        return rv;
       }
 
       data = wb_.peek();
@@ -556,19 +556,19 @@ std::expected<void, Error> LiveCheck::write_clear() {
   return {};
 }
 
-int LiveCheck::on_read(std::span<const uint8_t> data) {
+std::expected<void, Error> LiveCheck::on_read(std::span<const uint8_t> data) {
   auto rv = nghttp2_session_mem_recv2(session_, data.data(), data.size());
   if (rv < 0) {
     Log{ERROR} << "nghttp2_session_mem_recv2() returned error: "
                << nghttp2_strerror(static_cast<int>(rv));
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   if (settings_ack_received_ && !session_closing_) {
     session_closing_ = true;
     auto rv = nghttp2_session_terminate_session(session_, NGHTTP2_NO_ERROR);
     if (rv != 0) {
-      return -1;
+      return std::unexpected{Error::HTTP2};
     }
   }
 
@@ -580,18 +580,18 @@ int LiveCheck::on_read(std::span<const uint8_t> data) {
 
     // If we have SETTINGS ACK already, we treat this success.
     if (settings_ack_received_) {
-      return 0;
+      return {};
     }
 
-    return -1;
+    return std::unexpected{Error::DONE};
   }
 
   signal_write();
 
-  return 0;
+  return {};
 }
 
-int LiveCheck::on_write() {
+std::expected<void, Error> LiveCheck::on_write() {
   for (;;) {
     const uint8_t *data;
     auto datalen = nghttp2_session_mem_send2(session_, &data);
@@ -599,7 +599,7 @@ int LiveCheck::on_write() {
     if (datalen < 0) {
       Log{ERROR} << "nghttp2_session_mem_send2() returned error: "
                  << nghttp2_strerror(static_cast<int>(datalen));
-      return -1;
+      return std::unexpected{Error::HTTP2};
     }
     if (datalen == 0) {
       break;
@@ -618,13 +618,13 @@ int LiveCheck::on_write() {
     }
 
     if (settings_ack_received_) {
-      return 0;
+      return {};
     }
 
-    return -1;
+    return std::unexpected{Error::DONE};
   }
 
-  return 0;
+  return {};
 }
 
 void LiveCheck::on_failure() {
