@@ -86,9 +86,9 @@ public:
   CompleteCb get_complete_cb() const;
 
   // Calls these functions when read/write event occurred respectively.
-  int on_read(int fd);
-  int on_write(int fd);
-  int on_timeout();
+  std::expected<void, Error> on_read(int fd);
+  std::expected<void, Error> on_write(int fd);
+  std::expected<void, Error> on_timeout();
   // Calls this function when DNS query finished.
   void on_result(int status, ares_addrinfo *result);
   void reset_timeout();
@@ -99,7 +99,7 @@ public:
   void stop_wev(int fd);
 
 private:
-  int handle_event(int rfd, int wfd);
+  std::expected<void, Error> handle_event(int rfd, int wfd);
 
   std::vector<std::unique_ptr<ev_io>> revs_, wevs_;
   Address result_;
