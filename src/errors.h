@@ -118,6 +118,8 @@ enum class Error {
   MRUBY,
   // memcached protocol error.
   MEMCACHED,
+  // BPF library error (e.g., error from libbpf API)
+  BPF,
 };
 
 } // namespace nghttp2
@@ -249,6 +251,9 @@ struct std::formatter<nghttp2::Error>
       break;
     case nghttp2::Error::MEMCACHED:
       s = "memcached protocol error"sv;
+      break;
+    case nghttp2::Error::BPF:
+      s = "BPF"sv;
       break;
     }
 

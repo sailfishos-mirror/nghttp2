@@ -199,17 +199,17 @@ int ConnectionHandler::create_single_worker() {
 #endif // defined(ENABLE_HTTP3)
     /* index = */ 0, ticket_keys_, this, config->conn.downstream);
 #ifdef HAVE_MRUBY
-  if (single_worker_->create_mruby_context() != 0) {
+  if (!single_worker_->create_mruby_context()) {
     return -1;
   }
 #endif // defined(HAVE_MRUBY)
 
-  if (single_worker_->setup_server_socket() != 0) {
+  if (!single_worker_->setup_server_socket()) {
     return -1;
   }
 
 #ifdef ENABLE_HTTP3
-  if (single_worker_->setup_quic_server_socket() != 0) {
+  if (!single_worker_->setup_quic_server_socket()) {
     return -1;
   }
 #endif // defined(ENABLE_HTTP3)
@@ -284,18 +284,17 @@ int ConnectionHandler::create_worker_thread(size_t num) {
 #  endif // defined(ENABLE_HTTP3)
                                i, ticket_keys_, this, config->conn.downstream);
 #  ifdef HAVE_MRUBY
-    if (worker->create_mruby_context() != 0) {
+    if (!worker->create_mruby_context()) {
       return -1;
     }
 #  endif // defined(HAVE_MRUBY)
 
-    if (worker->setup_server_socket() != 0) {
+    if (!worker->setup_server_socket()) {
       return -1;
     }
 
 #  ifdef ENABLE_HTTP3
-    if ((!apiconf.enabled || i != 0) &&
-        worker->setup_quic_server_socket() != 0) {
+    if ((!apiconf.enabled || i != 0) && !worker->setup_quic_server_socket()) {
       return -1;
     }
 #  endif // defined(ENABLE_HTTP3)
@@ -842,8 +841,8 @@ int ConnectionHandler::quic_ipc_read() {
   }
 
   if (single_worker_) {
-    auto faddr = single_worker_->find_quic_upstream_addr(pkt->local_addr);
-    if (faddr == nullptr) {
+    auto maybe_faddr = single_worker_->find_quic_upstream_addr(pkt->local_addr);
+    if (!maybe_faddr) {
       Log{ERROR} << "No suitable upstream address found";
 
       return 0;
@@ -851,8 +850,8 @@ int ConnectionHandler::quic_ipc_read() {
 
     auto quic_conn_handler = single_worker_->get_quic_connection_handler();
 
-    quic_conn_handler->handle_packet(faddr, pkt->remote_addr, pkt->local_addr,
-                                     pkt->pi, pkt->data);
+    quic_conn_handler->handle_packet(*maybe_faddr, pkt->remote_addr,
+                                     pkt->local_addr, pkt->pi, pkt->data);
 
     return 0;
   }

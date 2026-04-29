@@ -37,6 +37,7 @@
 #ifndef NOTHREADS
 #  include <future>
 #endif // !defined(NOTHREADS)
+#include <expected>
 
 #include "ssl_compat.h"
 
@@ -63,6 +64,7 @@
 #  include "shrpx_quic.h"
 #endif // defined(ENABLE_HTTP3)
 #include "allocator.h"
+#include "errors.h"
 
 using namespace nghttp2;
 
@@ -350,7 +352,7 @@ public:
   std::mt19937 &get_randgen();
 
 #ifdef HAVE_MRUBY
-  int create_mruby_context();
+  std::expected<void, Error> create_mruby_context();
 
   mruby::MRubyContext *get_mruby_context() const;
 #endif // defined(HAVE_MRUBY)
@@ -367,9 +369,9 @@ public:
 
   ConnectionHandler *get_connection_handler() const;
 
-  int setup_server_socket();
+  std::expected<void, Error> setup_server_socket();
   void drain_and_delete_listener();
-  int create_tcp_server_socket(UpstreamAddr &addr);
+  std::expected<void, Error> create_tcp_server_socket(UpstreamAddr &addr);
   void enable_listener();
   void disable_listener();
   void sleep_listener(ev_tstamp t);
@@ -377,7 +379,7 @@ public:
 #ifdef ENABLE_HTTP3
   QUICConnectionHandler *get_quic_connection_handler();
 
-  int setup_quic_server_socket();
+  std::expected<void, Error> setup_quic_server_socket();
 
   const WorkerID &get_worker_id() const;
 
@@ -389,16 +391,18 @@ public:
   uint32_t compute_sk_index() const;
 #  endif // defined(HAVE_LIBBPF)
 
-  int create_quic_server_socket(UpstreamAddr &addr);
+  std::expected<void, Error> create_quic_server_socket(UpstreamAddr &addr);
 
   // Returns a pointer to UpstreamAddr which matches |local_addr|.
-  const UpstreamAddr *find_quic_upstream_addr(const Address &local_addr);
+  std::expected<const UpstreamAddr *, Error>
+  find_quic_upstream_addr(const Address &local_addr);
 #endif // defined(ENABLE_HTTP3)
 
   DNSTracker *get_dns_tracker();
 
-  int handle_connection(int fd, const sockaddr *addr, socklen_t addrlen,
-                        const UpstreamAddr *faddr);
+  std::expected<void, Error> handle_connection(int fd, const sockaddr *addr,
+                                               socklen_t addrlen,
+                                               const UpstreamAddr *faddr);
 
 private:
 #ifndef NOTHREADS
