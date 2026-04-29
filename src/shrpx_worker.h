@@ -394,7 +394,8 @@ public:
   std::expected<void, Error> create_quic_server_socket(UpstreamAddr &addr);
 
   // Returns a pointer to UpstreamAddr which matches |local_addr|.
-  const UpstreamAddr *find_quic_upstream_addr(const Address &local_addr);
+  std::expected<const UpstreamAddr *, Error>
+  find_quic_upstream_addr(const Address &local_addr);
 #endif // defined(ENABLE_HTTP3)
 
   DNSTracker *get_dns_tracker();

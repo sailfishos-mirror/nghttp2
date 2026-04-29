@@ -554,12 +554,14 @@ void Worker::process_events() {
     const UpstreamAddr *faddr;
 
     if (wev.quic_pkt->upstream_addr_index == static_cast<size_t>(-1)) {
-      faddr = find_quic_upstream_addr(wev.quic_pkt->local_addr);
-      if (faddr == nullptr) {
+      auto maybe_faddr = find_quic_upstream_addr(wev.quic_pkt->local_addr);
+      if (!maybe_faddr) {
         Log{ERROR} << "No suitable upstream address found";
 
         break;
       }
+
+      faddr = *maybe_faddr;
     } else if (quic_upstream_addrs_.size() <=
                wev.quic_pkt->upstream_addr_index) {
       Log{ERROR} << "upstream_addr_index is too large";
@@ -1458,9 +1460,11 @@ Worker::create_quic_server_socket(UpstreamAddr &faddr) {
 
 const WorkerID &Worker::get_worker_id() const { return worker_id_; }
 
-const UpstreamAddr *Worker::find_quic_upstream_addr(const Address &local_addr) {
+std::expected<const UpstreamAddr *, Error>
+Worker::find_quic_upstream_addr(const Address &local_addr) {
   return std::visit(
-    [&faddrs = quic_upstream_addrs_](auto &&arg) {
+    [&faddrs = quic_upstream_addrs_](
+      auto &&arg) -> std::expected<const UpstreamAddr *, Error> {
       const UpstreamAddr *fallback_faddr = nullptr;
 
       using T = std::decay_t<decltype(arg)>;
@@ -1501,6 +1505,10 @@ const UpstreamAddr *Worker::find_quic_upstream_addr(const Address &local_addr) {
         if (faddr.sockaddr_any) {
           fallback_faddr = &faddr;
         }
+      }
+
+      if (!fallback_faddr) {
+        return std::unexpected{Error::ENTITY_NOT_FOUND};
       }
 
       return fallback_faddr;
