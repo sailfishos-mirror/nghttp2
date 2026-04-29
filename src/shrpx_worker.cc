@@ -1682,8 +1682,9 @@ void downstream_failure(DownstreamAddr *addr, const Address *raddr) {
   }
 }
 
-int Worker::handle_connection(int fd, const sockaddr *addr, socklen_t addrlen,
-                              const UpstreamAddr *faddr) {
+std::expected<void, Error>
+Worker::handle_connection(int fd, const sockaddr *addr, socklen_t addrlen,
+                          const UpstreamAddr *faddr) {
   if (log_enabled(INFO)) {
     Log{INFO, this} << "Accepted connection from "
                     << util::numeric_name(addr, addrlen) << ", fd=" << fd;
@@ -1700,7 +1701,7 @@ int Worker::handle_connection(int fd, const sockaddr *addr, socklen_t addrlen,
 
     close(fd);
 
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   auto maybe_handler = tls::accept_connection(this, fd, addr, addrlen, faddr);
@@ -1711,7 +1712,7 @@ int Worker::handle_connection(int fd, const sockaddr *addr, socklen_t addrlen,
 
     close(fd);
 
-    return -1;
+    return std::unexpected{maybe_handler.error()};
   }
 
   auto client_handler = maybe_handler->release();
@@ -1720,7 +1721,7 @@ int Worker::handle_connection(int fd, const sockaddr *addr, socklen_t addrlen,
     Log{INFO, this} << "CLIENT_HANDLER:" << client_handler << " created";
   }
 
-  return 0;
+  return {};
 }
 
 } // namespace shrpx

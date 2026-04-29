@@ -399,8 +399,9 @@ public:
 
   DNSTracker *get_dns_tracker();
 
-  int handle_connection(int fd, const sockaddr *addr, socklen_t addrlen,
-                        const UpstreamAddr *faddr);
+  std::expected<void, Error> handle_connection(int fd, const sockaddr *addr,
+                                               socklen_t addrlen,
+                                               const UpstreamAddr *faddr);
 
 private:
 #ifndef NOTHREADS
