@@ -1521,13 +1521,14 @@ size_t match_downstream_addr_group_host(
               << ", path=" << path;
   }
 
-  auto group = router.match(host, path);
-  if (group != -1) {
+  if (auto maybe_group = router.match(host, path); maybe_group) {
+    auto group = *maybe_group;
+
     if (log_enabled(INFO)) {
       Log{INFO} << "Found pattern with query " << host << path
-                << ", matched pattern=" << groups[as_unsigned(group)]->pattern;
+                << ", matched pattern=" << groups[group]->pattern;
     }
-    return as_unsigned(group);
+    return group;
   }
 
   if (!wildcard_patterns.empty() && !host.empty()) {
@@ -1538,47 +1539,50 @@ size_t match_downstream_addr_group_host(
                                                std::ranges::end(host),
                                                std::ranges::begin(rev_host_src))
                        .out);
-    ssize_t best_group = -1;
+
+    constexpr auto no_match = std::numeric_limits<size_t>::max();
+    size_t best_group = no_match;
     const RNode *last_node = nullptr;
 
     for (;;) {
       size_t nread = 0;
-      auto wcidx =
+      auto maybe_wcidx =
         rev_wildcard_router.match_prefix(&nread, &last_node, rev_host);
-      if (wcidx == -1) {
+      if (!maybe_wcidx) {
         break;
       }
+
+      auto wcidx = *maybe_wcidx;
 
       rev_host = std::string_view{std::ranges::begin(rev_host) + nread,
                                   std::ranges::end(rev_host)};
 
-      auto &wc = wildcard_patterns[as_unsigned(wcidx)];
-      auto group = wc.router.match(""sv, path);
-      if (group != -1) {
+      auto &wc = wildcard_patterns[wcidx];
+      if (auto maybe_group = wc.router.match(""sv, path); maybe_group) {
+        best_group = *maybe_group;
+
         // We sorted wildcard_patterns in a way that first match is the
         // longest host pattern.
         if (log_enabled(INFO)) {
           Log{INFO} << "Found wildcard pattern with query " << host << path
-                    << ", matched pattern="
-                    << groups[as_unsigned(group)]->pattern;
+                    << ", matched pattern=" << groups[best_group]->pattern;
         }
-
-        best_group = group;
       }
     }
 
-    if (best_group != -1) {
-      return as_unsigned(best_group);
+    if (best_group != no_match) {
+      return best_group;
     }
   }
 
-  group = router.match(""sv, path);
-  if (group != -1) {
+  if (auto maybe_group = router.match(""sv, path); maybe_group) {
+    auto group = *maybe_group;
+
     if (log_enabled(INFO)) {
       Log{INFO} << "Found pattern with query " << path
-                << ", matched pattern=" << groups[as_unsigned(group)]->pattern;
+                << ", matched pattern=" << groups[group]->pattern;
     }
-    return as_unsigned(group);
+    return group;
   }
 
   if (log_enabled(INFO)) {
