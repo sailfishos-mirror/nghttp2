@@ -116,6 +116,8 @@ enum class Error {
   HTTP_FIELD_TOO_LARGE,
   // mruby library error (e.g., error from mruby API)
   MRUBY,
+  // memcached protocol error.
+  MEMCACHED,
 };
 
 } // namespace nghttp2
@@ -244,6 +246,9 @@ struct std::formatter<nghttp2::Error>
       break;
     case nghttp2::Error::MRUBY:
       s = "mruby"sv;
+      break;
+    case nghttp2::Error::MEMCACHED:
+      s = "memcached protocol error"sv;
       break;
     }
 
