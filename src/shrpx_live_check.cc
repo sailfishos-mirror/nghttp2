@@ -71,11 +71,9 @@ void timeoutcb(struct ev_loop *loop, ev_timer *w, int revents) {
 
 namespace {
 void backoff_timeoutcb(struct ev_loop *loop, ev_timer *w, int revents) {
-  int rv;
   auto live_check = static_cast<LiveCheck *>(w->data);
 
-  rv = live_check->initiate_connection();
-  if (rv != 0) {
+  if (!live_check->initiate_connection()) {
     live_check->on_failure();
     return;
   }
@@ -183,7 +181,7 @@ std::expected<void, Error> LiveCheck::do_read() { return read_(*this); }
 
 std::expected<void, Error> LiveCheck::do_write() { return write_(*this); }
 
-int LiveCheck::initiate_connection() {
+std::expected<void, Error> LiveCheck::initiate_connection() {
   int rv;
 
   auto worker_blocker = worker_->get_connect_blocker();
@@ -191,7 +189,7 @@ int LiveCheck::initiate_connection() {
     if (log_enabled(INFO)) {
       Log{INFO} << "Worker wide backend connection was blocked temporarily";
     }
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   if (!dns_query_ && addr_->tls) {
@@ -199,7 +197,7 @@ int LiveCheck::initiate_connection() {
 
     auto maybe_ssl = tls::create_ssl(ssl_ctx_);
     if (!maybe_ssl) {
-      return -1;
+      return std::unexpected{maybe_ssl.error()};
     }
 
     auto ssl = *maybe_ssl;
@@ -223,13 +221,10 @@ int LiveCheck::initiate_connection() {
     if (!dns_query_) {
       auto dns_query = std::make_unique<DNSQuery>(
         addr_->host, [this](DNSResolverStatus status, const Address *result) {
-          int rv;
-
           if (status == DNSResolverStatus::OK) {
             *this->resolved_addr_ = *result;
           }
-          rv = this->initiate_connection();
-          if (rv != 0) {
+          if (!initiate_connection()) {
             this->on_failure();
           }
         });
@@ -241,10 +236,10 @@ int LiveCheck::initiate_connection() {
 
       switch (dns_tracker->resolve(resolved_addr_.get(), dns_query.get())) {
       case DNSResolverStatus::ERROR:
-        return -1;
+        return std::unexpected{Error::DNS};
       case DNSResolverStatus::RUNNING:
         dns_query_ = std::move(dns_query);
-        return 0;
+        return {};
       case DNSResolverStatus::OK:
         break;
       default:
@@ -254,7 +249,7 @@ int LiveCheck::initiate_connection() {
       switch (dns_query_->status) {
       case DNSResolverStatus::ERROR:
         dns_query_.reset();
-        return -1;
+        return std::unexpected{Error::DNS};
       case DNSResolverStatus::OK:
         dns_query_.reset();
         break;
@@ -274,7 +269,7 @@ int LiveCheck::initiate_connection() {
     auto error = errno;
     Log{WARN} << "socket() failed; addr=" << util::to_numeric_addr(raddr_)
               << ", errno=" << error;
-    return -1;
+    return std::unexpected{maybe_fd.error()};
   }
 
   conn_.fd = *maybe_fd;
@@ -288,7 +283,7 @@ int LiveCheck::initiate_connection() {
     close(conn_.fd);
     conn_.fd = -1;
 
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
 
   if (addr_->tls) {
@@ -319,7 +314,7 @@ int LiveCheck::initiate_connection() {
   conn_.wt.repeat = downstreamconf.timeout.connect;
   ev_timer_again(conn_.loop, &conn_.wt);
 
-  return 0;
+  return {};
 }
 
 std::expected<void, Error> LiveCheck::connected() {

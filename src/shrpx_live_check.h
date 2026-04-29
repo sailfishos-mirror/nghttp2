@@ -29,6 +29,7 @@
 
 #include <functional>
 #include <random>
+#include <expected>
 
 #include "ssl_compat.h"
 
@@ -44,6 +45,7 @@
 #include <nghttp2/nghttp2.h>
 
 #include "shrpx_connection.h"
+#include "errors.h"
 
 namespace shrpx {
 
@@ -62,7 +64,7 @@ public:
   void on_success();
   void on_failure();
 
-  int initiate_connection();
+  std::expected<void, Error> initiate_connection();
 
   // Schedules next connection attempt
   void schedule();
