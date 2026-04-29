@@ -453,7 +453,7 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
 
   auto config = get_config();
 
-  if (reopen_log_files(config->logging) != 0) {
+  if (!reopen_log_files(config->logging)) {
     Log{FATAL} << "Failed to open log file";
     return -1;
   }

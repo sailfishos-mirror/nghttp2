@@ -776,8 +776,8 @@ void upstream_accesslog(const std::vector<LogFragment> &lfv,
     ;
 }
 
-int reopen_log_files(const LoggingConfig &loggingconf) {
-  int res = 0;
+std::expected<void, Error> reopen_log_files(const LoggingConfig &loggingconf) {
+  std::expected<void, Error> res;
   int new_accesslog_fd = -1;
   int new_errorlog_fd = -1;
 
@@ -786,18 +786,18 @@ int reopen_log_files(const LoggingConfig &loggingconf) {
   auto &errorconf = loggingconf.error;
 
   if (!accessconf.syslog && !accessconf.file.empty()) {
-    new_accesslog_fd = open_log_file(accessconf.file.data());
-
-    if (new_accesslog_fd == -1) {
+    auto maybe_new_accesslog_fd = open_log_file(accessconf.file.data());
+    if (!maybe_new_accesslog_fd) {
       Log{ERROR} << "Failed to open accesslog file " << accessconf.file;
-      res = -1;
+      res = std::unexpected{maybe_new_accesslog_fd.error()};
+    } else {
+      new_accesslog_fd = *maybe_new_accesslog_fd;
     }
   }
 
   if (!errorconf.syslog && !errorconf.file.empty()) {
-    new_errorlog_fd = open_log_file(errorconf.file.data());
-
-    if (new_errorlog_fd == -1) {
+    auto maybe_new_errorlog_fd = open_log_file(errorconf.file.data());
+    if (!maybe_new_errorlog_fd) {
       if (lgconf->errorlog_fd != -1) {
         Log{ERROR} << "Failed to open errorlog file " << errorconf.file;
       } else {
@@ -805,7 +805,9 @@ int reopen_log_files(const LoggingConfig &loggingconf) {
                   << std::endl;
       }
 
-      res = -1;
+      res = std::unexpected{maybe_new_errorlog_fd.error()};
+    } else {
+      new_errorlog_fd = *maybe_new_errorlog_fd;
     }
   }
 
@@ -877,7 +879,7 @@ void close_log_file(int &fd) {
   fd = -1;
 }
 
-int open_log_file(const char *path) {
+std::expected<int, Error> open_log_file(const char *path) {
   if (strcmp(path, "/dev/stdout") == 0 ||
       strcmp(path, "/proc/self/fd/1") == 0) {
     return STDOUT_COPY;
@@ -904,7 +906,7 @@ int open_log_file(const char *path) {
 #endif // !defined(O_CLOEXEC)
 
   if (fd == -1) {
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
 
   return fd;

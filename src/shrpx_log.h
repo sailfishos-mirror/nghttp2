@@ -35,11 +35,13 @@
 #include <algorithm>
 #include <ranges>
 #include <source_location>
+#include <expected>
 
 #include "shrpx_log_config.h"
 #include "tls.h"
 #include "template.h"
 #include "util.h"
+#include "errors.h"
 
 using namespace nghttp2;
 
@@ -313,7 +315,7 @@ struct LogSpec {
 void upstream_accesslog(const std::vector<LogFragment> &lf,
                         const LogSpec &lgsp);
 
-int reopen_log_files(const LoggingConfig &loggingconf);
+std::expected<void, Error> reopen_log_files(const LoggingConfig &loggingconf);
 
 // Logs message when process whose pid is |pid| and exist status is
 // |rstatus| exited.  The |msg| is prepended to the log message.
@@ -336,8 +338,8 @@ void close_log_file(int &fd);
 
 // Opens |path| with O_APPEND enabled.  If file does not exist, it is
 // created first.  This function returns file descriptor referring the
-// opened file if it succeeds, or -1.
-int open_log_file(const char *path);
+// opened file if it succeeds.
+std::expected<int, Error> open_log_file(const char *path);
 
 } // namespace shrpx
 

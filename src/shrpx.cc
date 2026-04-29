@@ -3317,7 +3317,7 @@ int process_options(
             loggingconf.syslog_facility);
   }
 
-  if (reopen_log_files(config->logging) != 0) {
+  if (!reopen_log_files(config->logging)) {
     Log{FATAL} << "Failed to open log file";
     return -1;
   }
