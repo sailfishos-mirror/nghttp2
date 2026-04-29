@@ -734,7 +734,7 @@ ConnectionHandler::forward_quic_packet_to_lingering_worker_process(
   return {};
 }
 
-int ConnectionHandler::quic_ipc_read() {
+std::expected<void, Error> ConnectionHandler::quic_ipc_read() {
   std::array<uint8_t, 65536> buf;
 
   ssize_t nread;
@@ -750,11 +750,11 @@ int ConnectionHandler::quic_ipc_read() {
     Log{ERROR} << "Failed to read data from QUIC IPC channel: "
                << xsi_strerror(error, errbuf.data(), errbuf.size());
 
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
 
   if (nread == 0) {
-    return 0;
+    return {};
   }
 
   size_t len = 1 + 1 + 1 + 1;
@@ -766,14 +766,14 @@ int ConnectionHandler::quic_ipc_read() {
   // When encoding, REMOTE_ADDRLEN and LOCAL_ADDRLEN are decremented
   // by 1.
   if (static_cast<size_t>(nread) < len) {
-    return 0;
+    return {};
   }
 
   auto p = buf.data();
   if (*p != static_cast<uint8_t>(QUICIPCType::DGRAM_FORWARD)) {
     Log{ERROR} << "Unknown QUICIPCType: " << static_cast<uint32_t>(*p);
 
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   ++p;
@@ -785,7 +785,7 @@ int ConnectionHandler::quic_ipc_read() {
     Log{ERROR} << "The length of remote address is too large: "
                << remote_addrlen;
 
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   len += remote_addrlen;
@@ -793,7 +793,7 @@ int ConnectionHandler::quic_ipc_read() {
   if (static_cast<size_t>(nread) < len) {
     Log{ERROR} << "Insufficient QUIC IPC message length";
 
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   sockaddr_storage ss;
@@ -806,7 +806,7 @@ int ConnectionHandler::quic_ipc_read() {
   if (local_addrlen > sizeof(sockaddr_storage)) {
     Log{ERROR} << "The length of local address is too large: " << local_addrlen;
 
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   len += local_addrlen;
@@ -814,7 +814,7 @@ int ConnectionHandler::quic_ipc_read() {
   if (static_cast<size_t>(nread) < len) {
     Log{ERROR} << "Insufficient QUIC IPC message length";
 
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   memcpy(&ss, p, local_addrlen);
@@ -837,12 +837,12 @@ int ConnectionHandler::quic_ipc_read() {
   if (rv < 0) {
     Log{ERROR} << "ngtcp2_pkt_decode_version_cid: " << ngtcp2_strerror(rv);
 
-    return -1;
+    return std::unexpected{Error::QUIC};
   }
 
   if (vc.dcidlen != SHRPX_QUIC_SCIDLEN) {
     Log{ERROR} << "DCID length is invalid";
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   if (single_worker_) {
@@ -850,7 +850,7 @@ int ConnectionHandler::quic_ipc_read() {
     if (!maybe_faddr) {
       Log{ERROR} << "No suitable upstream address found";
 
-      return 0;
+      return {};
     }
 
     auto quic_conn_handler = single_worker_->get_quic_connection_handler();
@@ -858,18 +858,19 @@ int ConnectionHandler::quic_ipc_read() {
     quic_conn_handler->handle_packet(*maybe_faddr, pkt->remote_addr,
                                      pkt->local_addr, pkt->pi, pkt->data);
 
-    return 0;
+    return {};
   }
 
   auto &qkm = quic_keying_materials_->keying_materials.front();
 
   ConnectionID decrypted_dcid;
 
-  if (!decrypt_quic_connection_id(
+  if (auto rv = decrypt_quic_connection_id(
         decrypted_dcid,
         std::span{vc.dcid, vc.dcidlen}.subspan(SHRPX_QUIC_CID_WORKER_ID_OFFSET),
-        qkm.cid_decryption_ctx)) {
-    return -1;
+        qkm.cid_decryption_ctx);
+      !rv) {
+    return rv;
   }
 
   auto maybe_worker = find_worker(decrypted_dcid.worker);
@@ -878,7 +879,7 @@ int ConnectionHandler::quic_ipc_read() {
       Log{INFO} << "No worker to match Worker ID";
     }
 
-    return 0;
+    return {};
   }
 
   WorkerEvent wev{
@@ -890,7 +891,7 @@ int ConnectionHandler::quic_ipc_read() {
 
   worker->send(std::move(wev));
 
-  return 0;
+  return {};
 }
 #endif // defined(ENABLE_HTTP3)
 

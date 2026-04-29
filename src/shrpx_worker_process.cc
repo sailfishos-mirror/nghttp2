@@ -199,7 +199,7 @@ namespace {
 void quic_ipc_readcb(struct ev_loop *loop, ev_io *w, int revents) {
   auto conn_handler = static_cast<ConnectionHandler *>(w->data);
 
-  if (conn_handler->quic_ipc_read() != 0) {
+  if (!conn_handler->quic_ipc_read()) {
     Log{ERROR} << "Failed to read data from QUIC IPC channel";
 
     return;

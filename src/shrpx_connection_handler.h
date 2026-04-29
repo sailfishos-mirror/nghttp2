@@ -187,7 +187,7 @@ public:
 
   void set_quic_ipc_fd(int fd);
 
-  int quic_ipc_read();
+  std::expected<void, Error> quic_ipc_read();
 
 #  ifdef HAVE_LIBBPF
   std::vector<BPFRef> &get_quic_bpf_refs();
