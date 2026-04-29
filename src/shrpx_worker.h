@@ -369,9 +369,9 @@ public:
 
   ConnectionHandler *get_connection_handler() const;
 
-  int setup_server_socket();
+  std::expected<void, Error> setup_server_socket();
   void drain_and_delete_listener();
-  int create_tcp_server_socket(UpstreamAddr &addr);
+  std::expected<void, Error> create_tcp_server_socket(UpstreamAddr &addr);
   void enable_listener();
   void disable_listener();
   void sleep_listener(ev_tstamp t);

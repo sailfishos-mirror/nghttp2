@@ -204,7 +204,7 @@ int ConnectionHandler::create_single_worker() {
   }
 #endif // defined(HAVE_MRUBY)
 
-  if (single_worker_->setup_server_socket() != 0) {
+  if (!single_worker_->setup_server_socket()) {
     return -1;
   }
 
@@ -289,7 +289,7 @@ int ConnectionHandler::create_worker_thread(size_t num) {
     }
 #  endif // defined(HAVE_MRUBY)
 
-    if (worker->setup_server_socket() != 0) {
+    if (!worker->setup_server_socket()) {
       return -1;
     }
 

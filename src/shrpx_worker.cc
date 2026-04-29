@@ -695,7 +695,7 @@ ConnectionHandler *Worker::get_connection_handler() const {
   return conn_handler_;
 }
 
-int Worker::setup_server_socket() {
+std::expected<void, Error> Worker::setup_server_socket() {
   auto config = get_config();
   auto &apiconf = config->api;
   auto api_isolation = apiconf.enabled && !config->single_thread;
@@ -716,18 +716,18 @@ int Worker::setup_server_socket() {
       // addr.fd.
       addr.fd = dup(addr.fd);
       if (addr.fd == -1) {
-        return -1;
+        return std::unexpected{Error::SYSCALL};
       }
 
       util::make_socket_closeonexec(addr.fd);
-    } else if (create_tcp_server_socket(addr) != 0) {
-      return -1;
+    } else if (auto rv = create_tcp_server_socket(addr); !rv) {
+      return rv;
     }
 
     listeners_.emplace_back(std::make_unique<AcceptHandler>(this, &addr));
   }
 
-  return 0;
+  return {};
 }
 
 void Worker::drain_and_delete_listener() {
@@ -739,7 +739,8 @@ void Worker::drain_and_delete_listener() {
   listeners_.clear();
 }
 
-int Worker::create_tcp_server_socket(UpstreamAddr &faddr) {
+std::expected<void, Error>
+Worker::create_tcp_server_socket(UpstreamAddr &faddr) {
   std::array<char, STRERROR_BUFSIZE> errbuf;
   int fd = -1;
   int rv;
@@ -772,7 +773,7 @@ int Worker::create_tcp_server_socket(UpstreamAddr &faddr) {
     Log{FATAL} << "Unable to get IPv" << (faddr.family == AF_INET ? "4" : "6")
                << " address for " << faddr.host << ", port " << faddr.port
                << ": " << gai_strerror(rv);
-    return -1;
+    return std::unexpected{Error::LIBC};
   }
 
   auto res_d = defer([res] { freeaddrinfo(res); });
@@ -885,7 +886,7 @@ int Worker::create_tcp_server_socket(UpstreamAddr &faddr) {
     Log{FATAL} << "Listening " << (faddr.family == AF_INET ? "IPv4" : "IPv6")
                << " socket failed";
 
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
 
   faddr.fd = fd;
@@ -895,7 +896,7 @@ int Worker::create_tcp_server_socket(UpstreamAddr &faddr) {
   Log{NOTICE} << "Listening on " << faddr.hostport
               << (faddr.tls ? ", tls" : "");
 
-  return 0;
+  return {};
 }
 
 #ifdef ENABLE_HTTP3
