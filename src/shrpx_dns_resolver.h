@@ -31,12 +31,14 @@
 #include <netinet/in.h>
 
 #include <vector>
+#include <expected>
 
 #include <ev.h>
 #include <ares.h>
 
 #include "template.h"
 #include "network.h"
+#include "errors.h"
 
 using namespace nghttp2;
 
@@ -74,7 +76,7 @@ public:
   ~DNSResolver();
 
   // Starts resolving hostname |name|.
-  int resolve(std::string_view name, int family);
+  std::expected<void, Error> resolve(std::string_view name, int family);
   // Returns status.  If status_ is DNSResolverStatus::SUCCESS &&
   // |result| is not nullptr, |*result| is filled.
   DNSResolverStatus get_status(Address *result) const;

@@ -53,7 +53,8 @@ DualDNSResolver::DualDNSResolver(struct ev_loop *loop, int family)
 }
 
 int DualDNSResolver::resolve(std::string_view host) {
-  int rv4 = 0, rv6 = 0;
+  std::expected<void, Error> rv4, rv6;
+
   if (family_ == AF_UNSPEC || family_ == AF_INET) {
     rv4 = resolv4_.resolve(host, AF_INET);
   }
@@ -61,7 +62,7 @@ int DualDNSResolver::resolve(std::string_view host) {
     rv6 = resolv6_.resolve(host, AF_INET6);
   }
 
-  if (rv4 != 0 && rv6 != 0) {
+  if (!rv4 && !rv6) {
     return -1;
   }
 
