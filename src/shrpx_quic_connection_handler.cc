@@ -150,10 +150,8 @@ void QUICConnectionHandler::handle_packet(const UpstreamAddr *faddr,
           conn_handler->match_quic_lingering_worker_process_worker_id(
             decrypted_dcid.worker);
         if (maybe_quic_lwp) {
-          if (conn_handler->forward_quic_packet_to_lingering_worker_process(
-                *maybe_quic_lwp, remote_addr, local_addr, pi, data) == 0) {
-            return;
-          }
+          conn_handler->forward_quic_packet_to_lingering_worker_process(
+            *maybe_quic_lwp, remote_addr, local_addr, pi, data);
 
           return;
         }

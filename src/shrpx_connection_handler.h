@@ -180,7 +180,7 @@ public:
   std::expected<QUICLingeringWorkerProcess *, Error>
   match_quic_lingering_worker_process_worker_id(const WorkerID &wid);
 
-  int forward_quic_packet_to_lingering_worker_process(
+  std::expected<void, Error> forward_quic_packet_to_lingering_worker_process(
     QUICLingeringWorkerProcess *quic_lwp, const Address &remote_addr,
     const Address &local_addr, const ngtcp2_pkt_info &pi,
     std::span<const uint8_t> data);

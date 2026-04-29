@@ -671,7 +671,8 @@ void ConnectionHandler::set_quic_lingering_worker_processes(
   quic_lingering_worker_processes_ = quic_lwps;
 }
 
-int ConnectionHandler::forward_quic_packet_to_lingering_worker_process(
+std::expected<void, Error>
+ConnectionHandler::forward_quic_packet_to_lingering_worker_process(
   QUICLingeringWorkerProcess *quic_lwp, const Address &remote_addr,
   const Address &local_addr, const ngtcp2_pkt_info &pi,
   std::span<const uint8_t> data) {
@@ -727,10 +728,10 @@ int ConnectionHandler::forward_quic_packet_to_lingering_worker_process(
     Log{ERROR} << "Failed to send QUIC IPC message: "
                << xsi_strerror(error, errbuf.data(), errbuf.size());
 
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
 
-  return 0;
+  return {};
 }
 
 int ConnectionHandler::quic_ipc_read() {
