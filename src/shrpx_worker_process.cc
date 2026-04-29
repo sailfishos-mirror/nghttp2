@@ -628,8 +628,7 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
 #endif // defined(ENABLE_HTTP3)
 
   if (config->single_thread) {
-    rv = conn_handler->create_single_worker();
-    if (rv != 0) {
+    if (!conn_handler->create_single_worker()) {
       return -1;
     }
   } else {

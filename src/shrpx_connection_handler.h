@@ -126,7 +126,7 @@ public:
   ConnectionHandler(struct ev_loop *loop, std::mt19937 &gen);
   ~ConnectionHandler();
   // Creates Worker object for single threaded configuration.
-  int create_single_worker();
+  std::expected<void, Error> create_single_worker();
   // Creates |num| Worker objects for multi threaded configuration.
   // The |num| must be strictly more than 1.
   int create_worker_thread(size_t num);

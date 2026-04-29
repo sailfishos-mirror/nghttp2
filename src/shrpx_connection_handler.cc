@@ -147,7 +147,7 @@ void ConnectionHandler::worker_replace_downstream(
   }
 }
 
-int ConnectionHandler::create_single_worker() {
+std::expected<void, Error> ConnectionHandler::create_single_worker() {
   cert_tree_ = tls::create_cert_lookup_tree();
   auto sv_ssl_ctx = tls::setup_server_ssl_context(
     all_ssl_ctx_, indexed_ssl_ctx_, cert_tree_.get()
@@ -199,22 +199,22 @@ int ConnectionHandler::create_single_worker() {
 #endif // defined(ENABLE_HTTP3)
     /* index = */ 0, ticket_keys_, this, config->conn.downstream);
 #ifdef HAVE_MRUBY
-  if (!single_worker_->create_mruby_context()) {
-    return -1;
+  if (auto rv = single_worker_->create_mruby_context(); !rv) {
+    return rv;
   }
 #endif // defined(HAVE_MRUBY)
 
-  if (!single_worker_->setup_server_socket()) {
-    return -1;
+  if (auto rv = single_worker_->setup_server_socket(); !rv) {
+    return rv;
   }
 
 #ifdef ENABLE_HTTP3
-  if (!single_worker_->setup_quic_server_socket()) {
-    return -1;
+  if (auto rv = single_worker_->setup_quic_server_socket(); !rv) {
+    return rv;
   }
 #endif // defined(ENABLE_HTTP3)
 
-  return 0;
+  return {};
 }
 
 int ConnectionHandler::create_worker_thread(size_t num) {
