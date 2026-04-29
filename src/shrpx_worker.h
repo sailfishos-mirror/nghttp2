@@ -37,6 +37,7 @@
 #ifndef NOTHREADS
 #  include <future>
 #endif // !defined(NOTHREADS)
+#include <expected>
 
 #include "ssl_compat.h"
 
@@ -63,6 +64,7 @@
 #  include "shrpx_quic.h"
 #endif // defined(ENABLE_HTTP3)
 #include "allocator.h"
+#include "errors.h"
 
 using namespace nghttp2;
 
@@ -350,7 +352,7 @@ public:
   std::mt19937 &get_randgen();
 
 #ifdef HAVE_MRUBY
-  int create_mruby_context();
+  std::expected<void, Error> create_mruby_context();
 
   mruby::MRubyContext *get_mruby_context() const;
 #endif // defined(HAVE_MRUBY)

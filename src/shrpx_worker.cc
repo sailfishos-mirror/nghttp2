@@ -662,15 +662,15 @@ MemchunkPool *Worker::get_mcpool() { return &mcpool_; }
 std::mt19937 &Worker::get_randgen() { return randgen_; }
 
 #ifdef HAVE_MRUBY
-int Worker::create_mruby_context() {
+std::expected<void, Error> Worker::create_mruby_context() {
   auto maybe_mruby_ctx = mruby::create_mruby_context(get_config()->mruby_file);
   if (!maybe_mruby_ctx) {
-    return -1;
+    return std::unexpected{maybe_mruby_ctx.error()};
   }
 
   mruby_ctx_ = std::move(*maybe_mruby_ctx);
 
-  return 0;
+  return {};
 }
 
 mruby::MRubyContext *Worker::get_mruby_context() const {

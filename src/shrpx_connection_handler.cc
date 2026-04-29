@@ -199,7 +199,7 @@ int ConnectionHandler::create_single_worker() {
 #endif // defined(ENABLE_HTTP3)
     /* index = */ 0, ticket_keys_, this, config->conn.downstream);
 #ifdef HAVE_MRUBY
-  if (single_worker_->create_mruby_context() != 0) {
+  if (!single_worker_->create_mruby_context()) {
     return -1;
   }
 #endif // defined(HAVE_MRUBY)
@@ -284,7 +284,7 @@ int ConnectionHandler::create_worker_thread(size_t num) {
 #  endif // defined(ENABLE_HTTP3)
                                i, ticket_keys_, this, config->conn.downstream);
 #  ifdef HAVE_MRUBY
-    if (worker->create_mruby_context() != 0) {
+    if (!worker->create_mruby_context()) {
       return -1;
     }
 #  endif // defined(HAVE_MRUBY)
