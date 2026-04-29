@@ -632,7 +632,7 @@ ConnectionHandler::find_worker(const WorkerID &wid) const {
   return workers_[*maybe_idx].get();
 }
 
-QUICLingeringWorkerProcess *
+std::expected<QUICLingeringWorkerProcess *, Error>
 ConnectionHandler::match_quic_lingering_worker_process_worker_id(
   const WorkerID &wid) {
   for (auto &lwps : quic_lingering_worker_processes_) {
@@ -641,7 +641,7 @@ ConnectionHandler::match_quic_lingering_worker_process_worker_id(
     }
   }
 
-  return nullptr;
+  return std::unexpected{Error::ENTITY_NOT_FOUND};
 }
 
 #  ifdef HAVE_LIBBPF

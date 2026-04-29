@@ -176,9 +176,8 @@ public:
     const std::vector<QUICLingeringWorkerProcess> &quic_lwps);
 
   // Return matching QUICLingeringWorkerProcess which has a Worker ID
-  // such that |dcid| starts with it.  If no such
-  // QUICLingeringWorkerProcess, it returns nullptr.
-  QUICLingeringWorkerProcess *
+  // such that |dcid| starts with it.
+  std::expected<QUICLingeringWorkerProcess *, Error>
   match_quic_lingering_worker_process_worker_id(const WorkerID &wid);
 
   int forward_quic_packet_to_lingering_worker_process(
