@@ -209,7 +209,7 @@ int ConnectionHandler::create_single_worker() {
   }
 
 #ifdef ENABLE_HTTP3
-  if (single_worker_->setup_quic_server_socket() != 0) {
+  if (!single_worker_->setup_quic_server_socket()) {
     return -1;
   }
 #endif // defined(ENABLE_HTTP3)
@@ -294,8 +294,7 @@ int ConnectionHandler::create_worker_thread(size_t num) {
     }
 
 #  ifdef ENABLE_HTTP3
-    if ((!apiconf.enabled || i != 0) &&
-        worker->setup_quic_server_socket() != 0) {
+    if ((!apiconf.enabled || i != 0) && !worker->setup_quic_server_socket()) {
       return -1;
     }
 #  endif // defined(ENABLE_HTTP3)

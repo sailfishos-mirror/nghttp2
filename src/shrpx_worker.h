@@ -379,7 +379,7 @@ public:
 #ifdef ENABLE_HTTP3
   QUICConnectionHandler *get_quic_connection_handler();
 
-  int setup_quic_server_socket();
+  std::expected<void, Error> setup_quic_server_socket();
 
   const WorkerID &get_worker_id() const;
 
@@ -391,7 +391,7 @@ public:
   uint32_t compute_sk_index() const;
 #  endif // defined(HAVE_LIBBPF)
 
-  int create_quic_server_socket(UpstreamAddr &addr);
+  std::expected<void, Error> create_quic_server_socket(UpstreamAddr &addr);
 
   // Returns a pointer to UpstreamAddr which matches |local_addr|.
   const UpstreamAddr *find_quic_upstream_addr(const Address &local_addr);

@@ -944,13 +944,13 @@ uint32_t Worker::compute_sk_index() const {
 }
 #  endif // defined(HAVE_LIBBPF)
 
-int Worker::setup_quic_server_socket() {
+std::expected<void, Error> Worker::setup_quic_server_socket() {
   size_t n = 0;
 
   for (auto &addr : quic_upstream_addrs_) {
     assert(!addr.host_unix);
-    if (create_quic_server_socket(addr) != 0) {
-      return -1;
+    if (auto rv = create_quic_server_socket(addr); !rv) {
+      return rv;
     }
 
     // Make sure that each endpoint has a unique address.
@@ -962,7 +962,7 @@ int Worker::setup_quic_server_socket() {
           << "QUIC frontend endpoint must be unique: a duplicate found for "
           << addr.hostport;
 
-        return -1;
+        return std::unexpected{Error::INTERNAL};
       }
     }
 
@@ -971,7 +971,7 @@ int Worker::setup_quic_server_socket() {
     quic_listeners_.emplace_back(std::make_unique<QUICListener>(&addr, this));
   }
 
-  return 0;
+  return {};
 }
 
 #  ifdef HAVE_LIBBPF
@@ -1085,7 +1085,8 @@ void KeyExpansion(uint8_t *RoundKey, const uint8_t *Key) {
 } // namespace
 #  endif // defined(HAVE_LIBBPF)
 
-int Worker::create_quic_server_socket(UpstreamAddr &faddr) {
+std::expected<void, Error>
+Worker::create_quic_server_socket(UpstreamAddr &faddr) {
   std::array<char, STRERROR_BUFSIZE> errbuf;
   int fd = -1;
   int rv;
@@ -1116,7 +1117,7 @@ int Worker::create_quic_server_socket(UpstreamAddr &faddr) {
     Log{FATAL} << "Unable to get IPv" << (faddr.family == AF_INET ? "4" : "6")
                << " address for " << faddr.host << ", port " << faddr.port
                << ": " << gai_strerror(rv);
-    return -1;
+    return std::unexpected{Error::LIBC};
   }
 
   auto res_d = defer([res] { freeaddrinfo(res); });
@@ -1278,7 +1279,7 @@ int Worker::create_quic_server_socket(UpstreamAddr &faddr) {
         Log{FATAL} << "Failed to open bpf object file: "
                    << xsi_strerror(error, errbuf.data(), errbuf.size());
         close(fd);
-        return -1;
+        return std::unexpected{Error::BPF};
       }
 
       rv = bpf_object__load(obj);
@@ -1287,7 +1288,7 @@ int Worker::create_quic_server_socket(UpstreamAddr &faddr) {
         Log{FATAL} << "Failed to load bpf object file: "
                    << xsi_strerror(error, errbuf.data(), errbuf.size());
         close(fd);
-        return -1;
+        return std::unexpected{Error::BPF};
       }
 
       auto prog = bpf_object__find_program_by_name(obj, "select_reuseport");
@@ -1296,7 +1297,7 @@ int Worker::create_quic_server_socket(UpstreamAddr &faddr) {
         Log{FATAL} << "Failed to find sk_reuseport program: "
                    << xsi_strerror(error, errbuf.data(), errbuf.size());
         close(fd);
-        return -1;
+        return std::unexpected{Error::BPF};
       }
 
       auto &ref = quic_bpf_refs[faddr.index];
@@ -1310,7 +1311,7 @@ int Worker::create_quic_server_socket(UpstreamAddr &faddr) {
         Log{FATAL} << "Failed to get reuseport_array: "
                    << xsi_strerror(error, errbuf.data(), errbuf.size());
         close(fd);
-        return -1;
+        return std::unexpected{Error::BPF};
       }
 
       ref.worker_id_map = bpf_object__find_map_by_name(obj, "worker_id_map");
@@ -1319,7 +1320,7 @@ int Worker::create_quic_server_socket(UpstreamAddr &faddr) {
         Log{FATAL} << "Failed to get worker_id_map: "
                    << xsi_strerror(error, errbuf.data(), errbuf.size());
         close(fd);
-        return -1;
+        return std::unexpected{Error::BPF};
       }
 
       auto sk_info = bpf_object__find_map_by_name(obj, "sk_info");
@@ -1328,7 +1329,7 @@ int Worker::create_quic_server_socket(UpstreamAddr &faddr) {
         Log{FATAL} << "Failed to get sk_info: "
                    << xsi_strerror(error, errbuf.data(), errbuf.size());
         close(fd);
-        return -1;
+        return std::unexpected{Error::BPF};
       }
 
       constexpr uint32_t zero = 0;
@@ -1341,7 +1342,7 @@ int Worker::create_quic_server_socket(UpstreamAddr &faddr) {
         Log{FATAL} << "Failed to update sk_info: "
                    << xsi_strerror(error, errbuf.data(), errbuf.size());
         close(fd);
-        return -1;
+        return std::unexpected{Error::BPF};
       }
 
       auto &qkms = conn_handler_->get_quic_keying_materials();
@@ -1353,7 +1354,7 @@ int Worker::create_quic_server_socket(UpstreamAddr &faddr) {
         Log{FATAL} << "Failed to get aes_key: "
                    << xsi_strerror(error, errbuf.data(), errbuf.size());
         close(fd);
-        return -1;
+        return std::unexpected{Error::BPF};
       }
 
       constexpr size_t expanded_aes_keylen = 176;
@@ -1369,7 +1370,7 @@ int Worker::create_quic_server_socket(UpstreamAddr &faddr) {
         Log{FATAL} << "Failed to update aes_key: "
                    << xsi_strerror(error, errbuf.data(), errbuf.size());
         close(fd);
-        return -1;
+        return std::unexpected{Error::BPF};
       }
 
       auto prog_fd = bpf_program__fd(prog);
@@ -1379,7 +1380,7 @@ int Worker::create_quic_server_socket(UpstreamAddr &faddr) {
         Log{FATAL} << "Failed to attach bpf program: "
                    << xsi_strerror(errno, errbuf.data(), errbuf.size());
         close(fd);
-        return -1;
+        return std::unexpected{Error::SYSCALL};
       }
     }
 
@@ -1394,7 +1395,7 @@ int Worker::create_quic_server_socket(UpstreamAddr &faddr) {
         Log{FATAL} << "Failed to update reuseport_array: "
                    << xsi_strerror(error, errbuf.data(), errbuf.size());
         close(fd);
-        return -1;
+        return std::unexpected{Error::BPF};
       }
 
       rv =
@@ -1405,7 +1406,7 @@ int Worker::create_quic_server_socket(UpstreamAddr &faddr) {
         Log{FATAL} << "Failed to update worker_id_map: "
                    << xsi_strerror(error, errbuf.data(), errbuf.size());
         close(fd);
-        return -1;
+        return std::unexpected{Error::BPF};
       }
     }
 #  endif // defined(HAVE_LIBBPF)
@@ -1417,7 +1418,7 @@ int Worker::create_quic_server_socket(UpstreamAddr &faddr) {
     Log{FATAL} << "Listening " << (faddr.family == AF_INET ? "IPv4" : "IPv6")
                << " socket failed";
 
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
 
   faddr.fd = fd;
@@ -1452,7 +1453,7 @@ int Worker::create_quic_server_socket(UpstreamAddr &faddr) {
 
   Log{NOTICE} << "Listening on " << faddr.hostport << ", quic";
 
-  return 0;
+  return {};
 }
 
 const WorkerID &Worker::get_worker_id() const { return worker_id_; }
