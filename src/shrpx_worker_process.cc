@@ -209,7 +209,7 @@ void quic_ipc_readcb(struct ev_loop *loop, ev_io *w, int revents) {
 #endif // defined(ENABLE_HTTP3)
 
 namespace {
-int generate_ticket_key(TicketKey &ticket_key) {
+std::expected<void, Error> generate_ticket_key(TicketKey &ticket_key) {
   ticket_key.cipher = get_config()->tls.ticket.cipher;
   ticket_key.hmac = nghttp2::tls::sha256();
   ticket_key.hmac_keylen = static_cast<size_t>(EVP_MD_size(ticket_key.hmac));
@@ -225,10 +225,10 @@ int generate_ticket_key(TicketKey &ticket_key) {
 
   if (RAND_bytes(reinterpret_cast<unsigned char *>(&ticket_key.data),
                  sizeof(ticket_key.data)) == 0) {
-    return -1;
+    return std::unexpected{Error::CRYPTO};
   }
 
-  return 0;
+  return {};
 }
 } // namespace
 
@@ -270,7 +270,7 @@ void renew_ticket_key_cb(struct ev_loop *loop, ev_timer *w, int revents) {
 
   auto &new_key = ticket_keys->keys[0];
 
-  if (generate_ticket_key(new_key) != 0) {
+  if (!generate_ticket_key(new_key)) {
     if (log_enabled(INFO)) {
       Log{INFO} << "failed to generate ticket key";
     }
@@ -424,7 +424,7 @@ void nb_child_cb(struct ev_loop *loop, ev_child *w, int revents) {
 #endif // defined(HAVE_NEVERBLEED)
 
 namespace {
-int send_ready_event(int ready_ipc_fd) {
+std::expected<void, Error> send_ready_event(int ready_ipc_fd) {
   std::array<char, STRERROR_BUFSIZE> errbuf;
   auto pid = getpid();
   ssize_t nwrite;
@@ -439,29 +439,30 @@ int send_ready_event(int ready_ipc_fd) {
     Log{ERROR} << "Writing PID to ready IPC channel failed: "
                << xsi_strerror(error, errbuf.data(), errbuf.size());
 
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
 
-  return 0;
+  return {};
 }
 } // namespace
 
-int worker_process_event_loop(WorkerProcessConfig *wpconf) {
+std::expected<void, Error>
+worker_process_event_loop(WorkerProcessConfig *wpconf) {
   int rv;
   std::array<char, STRERROR_BUFSIZE> errbuf;
   (void)errbuf;
 
   auto config = get_config();
 
-  if (!reopen_log_files(config->logging)) {
+  if (auto rv = reopen_log_files(config->logging); !rv) {
     Log{FATAL} << "Failed to open log file";
-    return -1;
+    return rv;
   }
 
   rv = ares_library_init(ARES_LIB_INIT_ALL);
   if (rv != 0) {
     Log{FATAL} << "ares_library_init failed: " << ares_strerror(rv);
-    return -1;
+    return std::unexpected{Error::DNS};
   }
 
   auto loop = EV_DEFAULT;
@@ -473,7 +474,7 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
   auto nb = std::make_unique<neverbleed_t>();
   if (neverbleed_init(nb.get(), nb_errbuf.data()) != 0) {
     Log{FATAL} << "neverbleed_init failed: " << nb_errbuf.data();
-    return -1;
+    return std::unexpected{Error::CRYPTO};
   }
 
   Log{NOTICE} << "neverbleed process [" << nb->daemon_pid << "] spawned";
@@ -576,27 +577,28 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
                    static_cast<nghttp2_ssl_rand_length_type>(
                      qkm.reserved.size())) != 1) {
       Log{ERROR} << "Failed to generate QUIC secret reserved data";
-      return -1;
+      return std::unexpected{Error::CRYPTO};
     }
 
     if (RAND_bytes(qkm.secret.data(), static_cast<nghttp2_ssl_rand_length_type>(
                                         qkm.secret.size())) != 1) {
       Log{ERROR} << "Failed to generate QUIC secret";
-      return -1;
+      return std::unexpected{Error::CRYPTO};
     }
 
     if (RAND_bytes(qkm.salt.data(), static_cast<nghttp2_ssl_rand_length_type>(
                                       qkm.salt.size())) != 1) {
       Log{ERROR} << "Failed to generate QUIC salt";
-      return -1;
+      return std::unexpected{Error::CRYPTO};
     }
   }
 
   for (auto &qkm : qkms->keying_materials) {
-    if (!generate_quic_connection_id_encryption_key(qkm.cid_encryption_key,
-                                                    qkm.secret, qkm.salt)) {
+    if (auto rv = generate_quic_connection_id_encryption_key(
+          qkm.cid_encryption_key, qkm.secret, qkm.salt);
+        !rv) {
       Log{ERROR} << "Failed to generate QUIC Connection ID encryption key";
-      return -1;
+      return rv;
     }
 
     qkm.cid_encryption_ctx = EVP_CIPHER_CTX_new();
@@ -604,7 +606,7 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
                             nullptr, qkm.cid_encryption_key.data(), nullptr)) {
       Log{ERROR}
         << "Failed to initialize QUIC Connection ID encryption context";
-      return -1;
+      return std::unexpected{Error::CRYPTO};
     }
 
     EVP_CIPHER_CTX_set_padding(qkm.cid_encryption_ctx, 0);
@@ -614,7 +616,7 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
                             nullptr, qkm.cid_encryption_key.data(), nullptr)) {
       Log{ERROR}
         << "Failed to initialize QUIC Connection ID decryption context";
-      return -1;
+      return std::unexpected{Error::CRYPTO};
     }
 
     EVP_CIPHER_CTX_set_padding(qkm.cid_decryption_ctx, 0);
@@ -628,8 +630,8 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
 #endif // defined(ENABLE_HTTP3)
 
   if (config->single_thread) {
-    if (!conn_handler->create_single_worker()) {
-      return -1;
+    if (auto rv = conn_handler->create_single_worker(); !rv) {
+      return rv;
     }
   } else {
 #ifndef NOTHREADS
@@ -641,12 +643,12 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
     if (rv != 0) {
       Log{ERROR} << "Blocking SIGCHLD failed: "
                  << xsi_strerror(rv, errbuf.data(), errbuf.size());
-      return -1;
+      return std::unexpected{Error::LIBC};
     }
 #endif // !defined(NOTHREADS)
 
-    if (!conn_handler->create_worker_thread(config->num_worker)) {
-      return -1;
+    if (auto rv = conn_handler->create_worker_thread(config->num_worker); !rv) {
+      return rv;
     }
 
 #ifndef NOTHREADS
@@ -654,7 +656,7 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
     if (rv != 0) {
       Log{ERROR} << "Unblocking SIGCHLD failed: "
                  << xsi_strerror(rv, errbuf.data(), errbuf.size());
-      return -1;
+      return std::unexpected{Error::LIBC};
     }
 #endif // !defined(NOTHREADS)
   }
@@ -693,8 +695,8 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
     Log{INFO} << "Entering event loop";
   }
 
-  if (send_ready_event(wpconf->ready_ipc_fd) != 0) {
-    return -1;
+  if (auto rv = send_ready_event(wpconf->ready_ipc_fd); !rv) {
+    return rv;
   }
 
   ev_run(loop, 0);
@@ -725,7 +727,7 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
 
   ares_library_cleanup();
 
-  return 0;
+  return {};
 }
 
 } // namespace shrpx
