@@ -89,7 +89,7 @@ public:
 
   // Call this function when HTTP/2 connection was established.  We
   // don't call this function for HTTP/1 at the moment.
-  int connection_made();
+  std::expected<void, Error> connection_made();
 
   void start_settings_timer();
   void stop_settings_timer();

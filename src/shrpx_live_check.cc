@@ -354,8 +354,8 @@ std::expected<void, Error> LiveCheck::connected() {
     read_ = &LiveCheck::read_clear;
     write_ = &LiveCheck::write_clear;
 
-    if (connection_made() != 0) {
-      return std::unexpected{Error::INTERNAL};
+    if (auto rv = connection_made(); !rv) {
+      return rv;
     }
 
     return {};
@@ -411,8 +411,8 @@ std::expected<void, Error> LiveCheck::tls_handshake() {
       read_ = &LiveCheck::read_tls;
       write_ = &LiveCheck::write_tls;
 
-      if (connection_made() != 0) {
-        return std::unexpected{Error::INTERNAL};
+      if (auto rv = connection_made(); !rv) {
+        return rv;
       }
 
       return {};
@@ -713,13 +713,13 @@ int on_frame_recv_callback(nghttp2_session *session, const nghttp2_frame *frame,
 }
 } // namespace
 
-int LiveCheck::connection_made() {
+std::expected<void, Error> LiveCheck::connection_made() {
   int rv;
 
   nghttp2_session_callbacks *callbacks;
   rv = nghttp2_session_callbacks_new(&callbacks);
   if (rv != 0) {
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   nghttp2_session_callbacks_set_on_frame_send_callback(callbacks,
@@ -733,12 +733,12 @@ int LiveCheck::connection_made() {
   nghttp2_session_callbacks_del(callbacks);
 
   if (rv != 0) {
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   rv = nghttp2_submit_settings(session_, NGHTTP2_FLAG_NONE, nullptr, 0);
   if (rv != 0) {
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   auto must_terminate =
@@ -752,13 +752,13 @@ int LiveCheck::connection_made() {
     rv =
       nghttp2_session_terminate_session(session_, NGHTTP2_INADEQUATE_SECURITY);
     if (rv != 0) {
-      return -1;
+      return std::unexpected{Error::HTTP2};
     }
   }
 
   signal_write();
 
-  return 0;
+  return {};
 }
 
 void LiveCheck::signal_write() { conn_.wlimit.startw(); }
