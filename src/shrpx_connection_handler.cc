@@ -217,7 +217,7 @@ std::expected<void, Error> ConnectionHandler::create_single_worker() {
   return {};
 }
 
-int ConnectionHandler::create_worker_thread(size_t num) {
+std::expected<void, Error> ConnectionHandler::create_worker_thread(size_t num) {
 #ifndef NOTHREADS
   assert(workers_.size() == 0);
 
@@ -284,18 +284,20 @@ int ConnectionHandler::create_worker_thread(size_t num) {
 #  endif // defined(ENABLE_HTTP3)
                                i, ticket_keys_, this, config->conn.downstream);
 #  ifdef HAVE_MRUBY
-    if (!worker->create_mruby_context()) {
-      return -1;
+    if (auto rv = worker->create_mruby_context(); !rv) {
+      return rv;
     }
 #  endif // defined(HAVE_MRUBY)
 
-    if (!worker->setup_server_socket()) {
-      return -1;
+    if (auto rv = worker->setup_server_socket(); !rv) {
+      return rv;
     }
 
 #  ifdef ENABLE_HTTP3
-    if ((!apiconf.enabled || i != 0) && !worker->setup_quic_server_socket()) {
-      return -1;
+    if (!apiconf.enabled || i != 0) {
+      if (auto rv = worker->setup_quic_server_socket(); !rv) {
+        return rv;
+      }
     }
 #  endif // defined(ENABLE_HTTP3)
 
@@ -311,7 +313,7 @@ int ConnectionHandler::create_worker_thread(size_t num) {
 
 #endif // !defined(NOTHREADS)
 
-  return 0;
+  return {};
 }
 
 void ConnectionHandler::join_worker() {

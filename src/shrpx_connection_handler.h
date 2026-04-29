@@ -129,7 +129,7 @@ public:
   std::expected<void, Error> create_single_worker();
   // Creates |num| Worker objects for multi threaded configuration.
   // The |num| must be strictly more than 1.
-  int create_worker_thread(size_t num);
+  std::expected<void, Error> create_worker_thread(size_t num);
   void
   set_ticket_keys_to_worker(const std::shared_ptr<TicketKeys> &ticket_keys);
   void worker_reopen_log_files();

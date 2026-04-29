@@ -645,8 +645,7 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
     }
 #endif // !defined(NOTHREADS)
 
-    rv = conn_handler->create_worker_thread(config->num_worker);
-    if (rv != 0) {
+    if (!conn_handler->create_worker_thread(config->num_worker)) {
       return -1;
     }
 
