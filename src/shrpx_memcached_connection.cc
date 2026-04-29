@@ -84,7 +84,7 @@ void connectcb(struct ev_loop *loop, ev_io *w, int revents) {
   auto conn = static_cast<Connection *>(w->data);
   auto mconn = static_cast<MemcachedConnection *>(conn->data);
 
-  if (mconn->connected() != 0) {
+  if (!mconn->connected()) {
     mconn->disconnect();
     return;
   }
@@ -212,7 +212,7 @@ std::expected<void, Error> MemcachedConnection::initiate_connection() {
   return {};
 }
 
-int MemcachedConnection::connected() {
+std::expected<void, Error> MemcachedConnection::connected() {
   auto sock_error = util::get_socket_error(conn_.fd);
   if (sock_error != 0) {
     Log{WARN, this} << "memcached connect failed; addr="
@@ -222,7 +222,7 @@ int MemcachedConnection::connected() {
 
     conn_.wlimit.stopw();
 
-    return -1;
+    return std::unexpected{Error::CONNECT_FAIL};
   }
 
   if (log_enabled(INFO)) {
@@ -239,7 +239,7 @@ int MemcachedConnection::connected() {
     do_read_ = &MemcachedConnection::tls_handshake;
     do_write_ = &MemcachedConnection::tls_handshake;
 
-    return 0;
+    return {};
   }
 
   ev_timer_stop(conn_.loop, &conn_.wt);
@@ -251,7 +251,7 @@ int MemcachedConnection::connected() {
   do_read_ = &MemcachedConnection::read_clear;
   do_write_ = &MemcachedConnection::write_clear;
 
-  return 0;
+  return {};
 }
 
 std::expected<void, Error> MemcachedConnection::on_write() {

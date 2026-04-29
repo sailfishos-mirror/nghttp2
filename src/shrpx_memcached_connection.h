@@ -109,7 +109,7 @@ public:
   std::expected<void, Error> add_request(std::unique_ptr<MemcachedRequest> req);
   std::expected<void, Error> initiate_connection();
 
-  int connected();
+  std::expected<void, Error> connected();
   std::expected<void, Error> on_write();
   std::expected<void, Error> on_read();
 
