@@ -2015,11 +2015,11 @@ std::expected<size_t, Error> CertLookupTree::add_cert(std::string_view hostname,
 
     if (wildcard_patterns_.size() !=
         rev_wildcard_router_.add_route(rev_suffix, wildcard_patterns_.size())) {
-      auto wcidx = rev_wildcard_router_.match(rev_suffix);
+      auto maybe_wcidx = rev_wildcard_router_.match(rev_suffix);
 
-      assert(wcidx != -1);
+      assert(maybe_wcidx.has_value());
 
-      wpat = &wildcard_patterns_[as_unsigned(wcidx)];
+      wpat = &wildcard_patterns_[*maybe_wcidx];
     } else {
       wildcard_patterns_.emplace_back();
       wpat = &wildcard_patterns_.back();
@@ -2052,9 +2052,8 @@ std::expected<size_t, Error> CertLookupTree::lookup(std::string_view hostname) {
   }
 
   // Always prefer exact match
-  auto idx = router_.match(hostname);
-  if (idx != -1) {
-    return as_unsigned(idx);
+  if (auto maybe_idx = router_.match(hostname); maybe_idx) {
+    return *maybe_idx;
   }
 
   if (wildcard_patterns_.empty()) {
@@ -2072,9 +2071,9 @@ std::expected<size_t, Error> CertLookupTree::lookup(std::string_view hostname) {
   for (;;) {
     size_t nread = 0;
 
-    auto wcidx =
+    auto maybe_wcidx =
       rev_wildcard_router_.match_prefix(&nread, &last_node, rev_host);
-    if (wcidx == -1 ||
+    if (!maybe_wcidx ||
         // '*' must match at least one byte
         nread == rev_host.size()) {
       if (best_idx == -1) {
@@ -2084,13 +2083,15 @@ std::expected<size_t, Error> CertLookupTree::lookup(std::string_view hostname) {
       return as_unsigned(best_idx);
     }
 
+    auto wcidx = *maybe_wcidx;
+
     rev_host = std::string_view{std::ranges::begin(rev_host) + nread,
                                 std::ranges::end(rev_host)};
 
     auto rev_prefix = std::string_view{std::ranges::begin(rev_host) + 1,
                                        std::ranges::end(rev_host)};
 
-    auto &wpat = wildcard_patterns_[as_unsigned(wcidx)];
+    auto &wpat = wildcard_patterns_[wcidx];
     for (auto &wprefix : wpat.rev_prefix) {
       if (!util::ends_with(rev_prefix, wprefix.prefix)) {
         continue;

@@ -47,7 +47,7 @@ void acceptcb(struct ev_loop *loop, ev_io *w, int revent) {
   constexpr size_t max_num_accept = 10;
 
   for (size_t i = 0; i < max_num_accept; ++i) {
-    if (h->accept_connection() != 0) {
+    if (!h->accept_connection()) {
       break;
     }
   }
@@ -66,7 +66,7 @@ AcceptHandler::~AcceptHandler() {
   close(faddr_->fd);
 }
 
-int AcceptHandler::accept_connection() {
+std::expected<void, Error> AcceptHandler::accept_connection() {
   sockaddr_storage ss;
   socklen_t addrlen = sizeof(ss);
   int cfd;
@@ -94,15 +94,15 @@ int AcceptHandler::accept_connection() {
     case EHOSTUNREACH:
     case EOPNOTSUPP:
     case ENETUNREACH:
-      return -1;
+      return std::unexpected{Error::SYSCALL};
     case EMFILE:
     case ENFILE:
       Log{WARN} << "acceptor: running out file descriptor; disable acceptor "
                    "temporarily";
       worker_->sleep_listener(get_config()->conn.listener.timeout.sleep);
-      return -1;
+      return std::unexpected{Error::SYSCALL};
     default:
-      return -1;
+      return std::unexpected{Error::SYSCALL};
     }
   }
 
@@ -114,7 +114,7 @@ int AcceptHandler::accept_connection() {
   worker_->handle_connection(cfd, reinterpret_cast<const sockaddr *>(&ss),
                              addrlen, faddr_);
 
-  return 0;
+  return {};
 }
 
 void AcceptHandler::drain_connection() {

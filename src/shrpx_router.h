@@ -29,8 +29,10 @@
 
 #include <vector>
 #include <memory>
+#include <expected>
 
 #include "allocator.h"
+#include "errors.h"
 
 using namespace nghttp2;
 
@@ -75,21 +77,22 @@ public:
   // with match(std::string_view, std::string_view).
   size_t add_route(std::string_view pattern, size_t index,
                    bool wildcard = false);
-  // Returns the matched index of pattern.  -1 if there is no match.
-  ssize_t match(std::string_view host, std::string_view path) const;
-  // Returns the matched index of pattern |s|.  -1 if there is no
-  // match.
-  ssize_t match(std::string_view s) const;
+  // Returns the matched index of pattern.
+  std::expected<size_t, Error> match(std::string_view host,
+                                     std::string_view path) const;
+  // Returns the matched index of pattern |s|.
+  std::expected<size_t, Error> match(std::string_view s) const;
   // Returns the matched index of pattern if a pattern is a suffix of
-  // |s|, otherwise -1.  If |*last_node| is not nullptr, it specifies
-  // the first node to start matching.  If it is nullptr, match will
-  // start from scratch.  When the match was found (the return value
-  // is not -1), |*nread| has the number of bytes matched in |s|, and
-  // |*last_node| has the last matched node.  One can continue to
-  // match the longer pattern using the returned |*last_node| to the
-  // another invocation of this function until it returns -1.
-  ssize_t match_prefix(size_t *nread, const RNode **last_node,
-                       std::string_view s) const;
+  // |s|.  If |*last_node| is not nullptr, it specifies the first node
+  // to start matching.  If it is nullptr, match will start from
+  // scratch.  When the match was found, |*nread| has the number of
+  // bytes matched in |s|, and |*last_node| has the last matched node.
+  // One can continue to match the longer pattern using the returned
+  // |*last_node| to the another invocation of this function until it
+  // returns error.
+  std::expected<size_t, Error> match_prefix(size_t *nread,
+                                            const RNode **last_node,
+                                            std::string_view s) const;
 
   void add_node(RNode *node, std::string_view pattern, ssize_t index,
                 ssize_t wildcard_index);

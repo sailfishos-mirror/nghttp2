@@ -309,41 +309,47 @@ const RNode *match_partial(bool *pattern_is_wildcard, const RNode *node,
 }
 } // namespace
 
-ssize_t Router::match(std::string_view host, std::string_view path) const {
+std::expected<size_t, Error> Router::match(std::string_view host,
+                                           std::string_view path) const {
   const RNode *node;
   size_t offset;
 
   node = match_complete(&offset, &root_, std::ranges::begin(host),
                         std::ranges::end(host));
   if (node == nullptr) {
-    return -1;
+    return std::unexpected{Error::ENTITY_NOT_FOUND};
   }
 
   bool pattern_is_wildcard;
   node = match_partial(&pattern_is_wildcard, node, offset,
                        std::ranges::begin(path), std::ranges::end(path));
   if (node == nullptr || node == &root_) {
-    return -1;
+    return std::unexpected{Error::ENTITY_NOT_FOUND};
   }
 
-  return pattern_is_wildcard ? node->wildcard_index : node->index;
+  auto idx = pattern_is_wildcard ? node->wildcard_index : node->index;
+  if (idx == -1) {
+    return std::unexpected{Error::ENTITY_NOT_FOUND};
+  }
+
+  return as_unsigned(idx);
 }
 
-ssize_t Router::match(std::string_view s) const {
+std::expected<size_t, Error> Router::match(std::string_view s) const {
   const RNode *node;
   size_t offset;
 
   node =
     match_complete(&offset, &root_, std::ranges::begin(s), std::ranges::end(s));
   if (node == nullptr) {
-    return -1;
+    return std::unexpected{Error::ENTITY_NOT_FOUND};
   }
 
-  if (node->s.size() != offset) {
-    return -1;
+  if (node->s.size() != offset || node->index == -1) {
+    return std::unexpected{Error::ENTITY_NOT_FOUND};
   }
 
-  return node->index;
+  return as_unsigned(node->index);
 }
 
 namespace {
@@ -388,8 +394,9 @@ const RNode *match_prefix(size_t *nread, const RNode *node, const char *first,
 }
 } // namespace
 
-ssize_t Router::match_prefix(size_t *nread, const RNode **last_node,
-                             std::string_view s) const {
+std::expected<size_t, Error> Router::match_prefix(size_t *nread,
+                                                  const RNode **last_node,
+                                                  std::string_view s) const {
   if (*last_node == nullptr) {
     *last_node = &root_;
   }
@@ -397,12 +404,16 @@ ssize_t Router::match_prefix(size_t *nread, const RNode **last_node,
   auto node = ::shrpx::match_prefix(nread, *last_node, std::ranges::begin(s),
                                     std::ranges::end(s));
   if (node == nullptr) {
-    return -1;
+    return std::unexpected{Error::ENTITY_NOT_FOUND};
   }
 
   *last_node = node;
 
-  return node->index;
+  if (node->index == -1) {
+    return std::unexpected{Error::ENTITY_NOT_FOUND};
+  }
+
+  return as_unsigned(node->index);
 }
 
 namespace {
