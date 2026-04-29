@@ -364,8 +364,8 @@ std::expected<void, Error> MemcachedConnection::read_tls() {
 
     recvbuf_.write(data.size());
 
-    if (parse_packet() != 0) {
-      return std::unexpected{Error::INTERNAL};
+    if (auto rv = parse_packet(); !rv) {
+      return rv;
     }
   }
 
@@ -422,15 +422,15 @@ std::expected<void, Error> MemcachedConnection::read_clear() {
 
     recvbuf_.write(data.size());
 
-    if (parse_packet() != 0) {
-      return std::unexpected{Error::INTERNAL};
+    if (auto rv = parse_packet(); !rv) {
+      return rv;
     }
   }
 
   return {};
 }
 
-int MemcachedConnection::parse_packet() {
+std::expected<void, Error> MemcachedConnection::parse_packet() {
   auto in = recvbuf_.pos;
 
   for (;;) {
@@ -440,13 +440,13 @@ int MemcachedConnection::parse_packet() {
     case MemcachedParseState::HEADER24: {
       if (recvbuf_.last - in < 24) {
         recvbuf_.drain_reset(as_unsigned(in - recvbuf_.pos));
-        return 0;
+        return {};
       }
 
       if (recvq_.empty()) {
         Log{WARN, this}
           << "Response received, but there is no in-flight request.";
-        return -1;
+        return std::unexpected{Error::MEMCACHED};
       }
 
       auto &req = recvq_.front();
@@ -454,7 +454,7 @@ int MemcachedConnection::parse_packet() {
       if (*in != MEMCACHED_RES_MAGIC) {
         Log{WARN, this} << "Response has bad magic: "
                         << static_cast<uint32_t>(*in);
-        return -1;
+        return std::unexpected{Error::MEMCACHED};
       }
       ++in;
 
@@ -479,26 +479,26 @@ int MemcachedConnection::parse_packet() {
           << "opcode in response does not match to the request: want "
           << static_cast<uint32_t>(req->op) << ", got "
           << static_cast<uint32_t>(parse_state_.op);
-        return -1;
+        return std::unexpected{Error::MEMCACHED};
       }
 
       if (parse_state_.keylen != 0) {
         Log{WARN, this} << "zero length keylen expected: got "
                         << parse_state_.keylen;
-        return -1;
+        return std::unexpected{Error::MEMCACHED};
       }
 
       if (parse_state_.totalbody > 16_k) {
         Log{WARN, this} << "totalbody is too large: got "
                         << parse_state_.totalbody;
-        return -1;
+        return std::unexpected{Error::MEMCACHED};
       }
 
       if (parse_state_.op == MemcachedOp::GET &&
           parse_state_.status_code == MemcachedStatusCode::NO_ERROR &&
           parse_state_.extralen == 0) {
         Log{WARN, this} << "response for GET does not have extra";
-        return -1;
+        return std::unexpected{Error::MEMCACHED};
       }
 
       if (parse_state_.totalbody <
@@ -506,7 +506,7 @@ int MemcachedConnection::parse_packet() {
         Log{WARN, this} << "totalbody is too short: totalbody "
                         << parse_state_.totalbody << ", want min "
                         << parse_state_.keylen + parse_state_.extralen;
-        return -1;
+        return std::unexpected{Error::MEMCACHED};
       }
 
       if (parse_state_.extralen) {
@@ -529,7 +529,7 @@ int MemcachedConnection::parse_packet() {
       in += n;
       if (parse_state_.read_left) {
         recvbuf_.reset();
-        return 0;
+        return {};
       }
       parse_state_.state = MemcachedParseState::VALUE;
       // since we require keylen == 0, totalbody - extralen ==
@@ -550,7 +550,7 @@ int MemcachedConnection::parse_packet() {
       in += n;
       if (parse_state_.read_left) {
         recvbuf_.reset();
-        return 0;
+        return {};
       }
 
       if (log_enabled(INFO)) {
@@ -588,7 +588,7 @@ int MemcachedConnection::parse_packet() {
   assert(in == recvbuf_.last);
   recvbuf_.reset();
 
-  return 0;
+  return {};
 }
 
 #undef DEFAULT_WR_IOVCNT

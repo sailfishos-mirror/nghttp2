@@ -124,7 +124,7 @@ public:
   void drain_send_queue(size_t nwrite);
 
   void make_request(MemcachedSendbuf *sendbuf, MemcachedRequest *req);
-  int parse_packet();
+  std::expected<void, Error> parse_packet();
   size_t serialized_size(MemcachedRequest *req);
 
   void signal_write();
