@@ -576,10 +576,12 @@ int ConnectionHandler::forward_quic_packet(const UpstreamAddr *faddr,
                                            std::span<const uint8_t> data) {
   assert(!get_config()->single_thread);
 
-  auto worker = find_worker(wid);
-  if (worker == nullptr) {
+  auto maybe_worker = find_worker(wid);
+  if (!maybe_worker) {
     return -1;
   }
+
+  auto worker = *maybe_worker;
 
   worker->send(WorkerEvent{
     .type = WorkerEventType::QUIC_PKT_FORWARD,
@@ -605,27 +607,29 @@ void ConnectionHandler::set_worker_ids(std::vector<WorkerID> worker_ids) {
 }
 
 namespace {
-ssize_t find_worker_index(const std::vector<WorkerID> &worker_ids,
-                          const WorkerID &wid) {
+std::expected<size_t, Error>
+find_worker_index(const std::vector<WorkerID> &worker_ids,
+                  const WorkerID &wid) {
   assert(!worker_ids.empty());
 
   if (wid.server != worker_ids[0].server ||
       wid.worker_process != worker_ids[0].worker_process ||
       wid.thread >= worker_ids.size()) {
-    return -1;
+    return std::unexpected{Error::ENTITY_NOT_FOUND};
   }
 
   return wid.thread;
 }
 } // namespace
 
-Worker *ConnectionHandler::find_worker(const WorkerID &wid) const {
-  auto idx = find_worker_index(worker_ids_, wid);
-  if (idx == -1) {
-    return nullptr;
+std::expected<Worker *, Error>
+ConnectionHandler::find_worker(const WorkerID &wid) const {
+  auto maybe_idx = find_worker_index(worker_ids_, wid);
+  if (!maybe_idx) {
+    return std::unexpected{maybe_idx.error()};
   }
 
-  return workers_[as_unsigned(idx)].get();
+  return workers_[*maybe_idx].get();
 }
 
 QUICLingeringWorkerProcess *
@@ -867,8 +871,8 @@ int ConnectionHandler::quic_ipc_read() {
     return -1;
   }
 
-  auto worker = find_worker(decrypted_dcid.worker);
-  if (worker == nullptr) {
+  auto maybe_worker = find_worker(decrypted_dcid.worker);
+  if (!maybe_worker) {
     if (log_enabled(INFO)) {
       Log{INFO} << "No worker to match Worker ID";
     }
@@ -880,6 +884,8 @@ int ConnectionHandler::quic_ipc_read() {
     .type = WorkerEventType::QUIC_PKT_FORWARD,
     .quic_pkt = std::move(pkt),
   };
+
+  auto worker = *maybe_worker;
 
   worker->send(std::move(wev));
 

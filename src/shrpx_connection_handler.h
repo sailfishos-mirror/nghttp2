@@ -169,7 +169,7 @@ public:
   const std::shared_ptr<QUICKeyingMaterials> &get_quic_keying_materials() const;
 
   void set_worker_ids(std::vector<WorkerID> worker_ids);
-  Worker *find_worker(const WorkerID &wid) const;
+  std::expected<Worker *, Error> find_worker(const WorkerID &wid) const;
 
   void set_quic_lingering_worker_processes(
     const std::vector<QUICLingeringWorkerProcess> &quic_lwps);
