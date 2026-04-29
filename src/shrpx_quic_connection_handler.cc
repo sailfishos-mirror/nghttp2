@@ -340,7 +340,7 @@ void QUICConnectionHandler::handle_packet(const UpstreamAddr *faddr,
           decrypted_dcid.worker != worker_->get_worker_id()) {
         if (!config->single_thread && conn_handler->forward_quic_packet(
                                         faddr, remote_addr, local_addr, pi,
-                                        decrypted_dcid.worker, data) == 0) {
+                                        decrypted_dcid.worker, data)) {
           return;
         }
 

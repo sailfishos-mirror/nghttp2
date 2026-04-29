@@ -161,9 +161,10 @@ public:
 #ifdef ENABLE_HTTP3
   const std::vector<SSL_CTX *> &get_quic_indexed_ssl_ctx(size_t idx) const;
 
-  int forward_quic_packet(const UpstreamAddr *faddr, const Address &remote_addr,
-                          const Address &local_addr, const ngtcp2_pkt_info &pi,
-                          const WorkerID &wid, std::span<const uint8_t> data);
+  std::expected<void, Error>
+  forward_quic_packet(const UpstreamAddr *faddr, const Address &remote_addr,
+                      const Address &local_addr, const ngtcp2_pkt_info &pi,
+                      const WorkerID &wid, std::span<const uint8_t> data);
 
   void set_quic_keying_materials(std::shared_ptr<QUICKeyingMaterials> qkms);
   const std::shared_ptr<QUICKeyingMaterials> &get_quic_keying_materials() const;

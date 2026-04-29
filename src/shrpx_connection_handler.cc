@@ -570,17 +570,15 @@ ConnectionHandler::get_quic_indexed_ssl_ctx(size_t idx) const {
 #endif // defined(ENABLE_HTTP3)
 
 #ifdef ENABLE_HTTP3
-int ConnectionHandler::forward_quic_packet(const UpstreamAddr *faddr,
-                                           const Address &remote_addr,
-                                           const Address &local_addr,
-                                           const ngtcp2_pkt_info &pi,
-                                           const WorkerID &wid,
-                                           std::span<const uint8_t> data) {
+std::expected<void, Error> ConnectionHandler::forward_quic_packet(
+  const UpstreamAddr *faddr, const Address &remote_addr,
+  const Address &local_addr, const ngtcp2_pkt_info &pi, const WorkerID &wid,
+  std::span<const uint8_t> data) {
   assert(!get_config()->single_thread);
 
   auto maybe_worker = find_worker(wid);
   if (!maybe_worker) {
-    return -1;
+    return std::unexpected{maybe_worker.error()};
   }
 
   auto worker = *maybe_worker;
@@ -591,7 +589,7 @@ int ConnectionHandler::forward_quic_packet(const UpstreamAddr *faddr,
                                              local_addr, pi, data),
   });
 
-  return 0;
+  return {};
 }
 
 void ConnectionHandler::set_quic_keying_materials(
