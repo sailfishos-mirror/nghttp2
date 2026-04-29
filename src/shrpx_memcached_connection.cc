@@ -715,25 +715,26 @@ void MemcachedConnection::make_request(MemcachedSendbuf *sendbuf,
   sendbuf->send_value_left = req->value.size();
 }
 
-int MemcachedConnection::add_request(std::unique_ptr<MemcachedRequest> req) {
+std::expected<void, Error>
+MemcachedConnection::add_request(std::unique_ptr<MemcachedRequest> req) {
   if (connect_blocker_.blocked()) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   sendq_.push_back(std::move(req));
 
   if (connected_) {
     signal_write();
-    return 0;
+    return {};
   }
 
   if (conn_.fd == -1 && initiate_connection() != 0) {
     connect_blocker_.on_failure();
     disconnect();
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
-  return 0;
+  return {};
 }
 
 // TODO should we start write timer too?

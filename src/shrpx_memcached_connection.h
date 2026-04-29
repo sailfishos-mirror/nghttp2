@@ -29,6 +29,7 @@
 
 #include <memory>
 #include <deque>
+#include <expected>
 
 #include <ev.h>
 
@@ -37,6 +38,7 @@
 #include "shrpx_connect_blocker.h"
 #include "buffer.h"
 #include "network.h"
+#include "errors.h"
 
 using namespace nghttp2;
 
@@ -104,7 +106,7 @@ public:
 
   void disconnect();
 
-  int add_request(std::unique_ptr<MemcachedRequest> req);
+  std::expected<void, Error> add_request(std::unique_ptr<MemcachedRequest> req);
   int initiate_connection();
 
   int connected();

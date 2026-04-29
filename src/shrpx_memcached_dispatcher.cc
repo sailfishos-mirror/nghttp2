@@ -43,7 +43,7 @@ MemcachedDispatcher::MemcachedDispatcher(const Address *addr,
 MemcachedDispatcher::~MemcachedDispatcher() {}
 
 int MemcachedDispatcher::add_request(std::unique_ptr<MemcachedRequest> req) {
-  if (mconn_->add_request(std::move(req)) != 0) {
+  if (!mconn_->add_request(std::move(req))) {
     return -1;
   }
 
