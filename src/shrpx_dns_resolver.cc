@@ -137,9 +137,10 @@ DNSResolver::~DNSResolver() {
   ev_timer_stop(loop_, &timer_);
 }
 
-int DNSResolver::resolve(std::string_view name, int family) {
+std::expected<void, Error> DNSResolver::resolve(std::string_view name,
+                                                int family) {
   if (status_ != DNSResolverStatus::IDLE) {
-    return -1;
+    return std::unexpected{Error::DNS};
   }
 
   if (log_enabled(INFO)) {
@@ -170,7 +171,7 @@ int DNSResolver::resolve(std::string_view name, int family) {
       Log{INFO} << "ares_init_options failed: " << ares_strerror(rv);
     }
     status_ = DNSResolverStatus::ERROR;
-    return -1;
+    return std::unexpected{Error::DNS};
   }
 
   channel_ = chan;
@@ -183,20 +184,24 @@ int DNSResolver::resolve(std::string_view name, int family) {
   ares_getaddrinfo(channel_, name_.data(), nullptr, &hints, addrinfo_cb, this);
   reset_timeout();
 
-  return 0;
+  return {};
 }
 
-int DNSResolver::on_read(int fd) { return handle_event(fd, ARES_SOCKET_BAD); }
+std::expected<void, Error> DNSResolver::on_read(int fd) {
+  return handle_event(fd, ARES_SOCKET_BAD);
+}
 
-int DNSResolver::on_write(int fd) { return handle_event(ARES_SOCKET_BAD, fd); }
+std::expected<void, Error> DNSResolver::on_write(int fd) {
+  return handle_event(ARES_SOCKET_BAD, fd);
+}
 
-int DNSResolver::on_timeout() {
+std::expected<void, Error> DNSResolver::on_timeout() {
   return handle_event(ARES_SOCKET_BAD, ARES_SOCKET_BAD);
 }
 
-int DNSResolver::handle_event(int rfd, int wfd) {
+std::expected<void, Error> DNSResolver::handle_event(int rfd, int wfd) {
   if (status_ == DNSResolverStatus::IDLE) {
-    return -1;
+    return std::unexpected{Error::DNS};
   }
 
   ares_process_fd(channel_, rfd, wfd);
@@ -204,11 +209,11 @@ int DNSResolver::handle_event(int rfd, int wfd) {
   switch (status_) {
   case DNSResolverStatus::RUNNING:
     reset_timeout();
-    return 0;
+    return {};
   case DNSResolverStatus::OK:
-    return 0;
+    return {};
   case DNSResolverStatus::ERROR:
-    return -1;
+    return std::unexpected{Error::DNS};
   default:
     // Unreachable
     assert(0);
