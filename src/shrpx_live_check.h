@@ -29,6 +29,7 @@
 
 #include <functional>
 #include <random>
+#include <expected>
 
 #include "ssl_compat.h"
 
@@ -44,6 +45,7 @@
 #include <nghttp2/nghttp2.h>
 
 #include "shrpx_connection.h"
+#include "errors.h"
 
 namespace shrpx {
 
@@ -62,7 +64,7 @@ public:
   void on_success();
   void on_failure();
 
-  int initiate_connection();
+  std::expected<void, Error> initiate_connection();
 
   // Schedules next connection attempt
   void schedule();
@@ -82,12 +84,12 @@ public:
 
   // These functions are used to feed / extract data to
   // nghttp2_session object.
-  int on_read(std::span<const uint8_t> data);
-  int on_write();
+  std::expected<void, Error> on_read(std::span<const uint8_t> data);
+  std::expected<void, Error> on_write();
 
   // Call this function when HTTP/2 connection was established.  We
   // don't call this function for HTTP/1 at the moment.
-  int connection_made();
+  std::expected<void, Error> connection_made();
 
   void start_settings_timer();
   void stop_settings_timer();
