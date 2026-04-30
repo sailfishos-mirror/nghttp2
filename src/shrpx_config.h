@@ -1414,7 +1414,7 @@ std::string_view str_syslog_facility(int facility);
 // Returns integer value of syslog |facility| string.
 std::expected<int, Error> int_syslog_facility(std::string_view strfacility);
 
-FILE *open_file_for_write(const char *filename);
+std::expected<FILE *, Error> open_file_for_write(const char *filename);
 
 // Reads TLS ticket key file in |files| and returns TicketKey which
 // stores read key data.  The given |cipher| and |hmac| determine the

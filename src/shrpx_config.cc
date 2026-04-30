@@ -326,7 +326,7 @@ read_quic_secret_file(std::string_view path) {
 }
 #endif // defined(ENABLE_HTTP3)
 
-FILE *open_file_for_write(const char *filename) {
+std::expected<FILE *, Error> open_file_for_write(const char *filename) {
   std::array<char, STRERROR_BUFSIZE> errbuf;
 
 #ifdef O_CLOEXEC
@@ -344,14 +344,14 @@ FILE *open_file_for_write(const char *filename) {
     auto error = errno;
     Log{ERROR} << "Failed to open " << filename << " for writing. Cause: "
                << xsi_strerror(error, errbuf.data(), errbuf.size());
-    return nullptr;
+    return std::unexpected{Error::SYSCALL};
   }
   auto f = fdopen(fd, "wb");
   if (f == nullptr) {
     auto error = errno;
     Log{ERROR} << "Failed to open " << filename << " for writing. Cause: "
                << xsi_strerror(error, errbuf.data(), errbuf.size());
-    return nullptr;
+    return std::unexpected{Error::LIBC};
   }
 
   return f;

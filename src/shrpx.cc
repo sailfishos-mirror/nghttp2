@@ -3345,15 +3345,15 @@ int process_options(
 
     if (!dumpconf.request_header_file.empty()) {
       auto path = dumpconf.request_header_file.data();
-      auto f = open_file_for_write(path);
 
-      if (f == nullptr) {
+      auto maybe_f = open_file_for_write(path);
+      if (!maybe_f) {
         Log{FATAL} << "Failed to open http2 upstream request header file: "
                    << path;
         return -1;
       }
 
-      dumpconf.request_header = f;
+      dumpconf.request_header = *maybe_f;
 
       if (config->uid != 0) {
         if (chown(path, config->uid, config->gid) == -1) {
@@ -3367,15 +3367,15 @@ int process_options(
 
     if (!dumpconf.response_header_file.empty()) {
       auto path = dumpconf.response_header_file.data();
-      auto f = open_file_for_write(path);
 
-      if (f == nullptr) {
+      auto maybe_f = open_file_for_write(path);
+      if (!maybe_f) {
         Log{FATAL} << "Failed to open http2 upstream response header file: "
                    << path;
         return -1;
       }
 
-      dumpconf.response_header = f;
+      dumpconf.response_header = *maybe_f;
 
       if (config->uid != 0) {
         if (chown(path, config->uid, config->gid) == -1) {
