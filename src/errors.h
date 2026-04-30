@@ -120,6 +120,8 @@ enum class Error {
   MEMCACHED,
   // BPF library error (e.g., error from libbpf API)
   BPF,
+  // General configuration error.
+  INVALID_CONFIG,
 };
 
 } // namespace nghttp2
@@ -254,6 +256,9 @@ struct std::formatter<nghttp2::Error>
       break;
     case nghttp2::Error::BPF:
       s = "BPF"sv;
+      break;
+    case nghttp2::Error::INVALID_CONFIG:
+      s = "invalid configuration"sv;
       break;
     }
 

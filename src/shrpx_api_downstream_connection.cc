@@ -402,10 +402,11 @@ std::expected<void, Error> APIDownstreamConnection::handle_backendconfig() {
       continue;
     }
 
-    if (parse_config(&new_config, optid, opt, optval, include_set,
-                     pattern_addr_indexer) != 0) {
+    if (auto rv = parse_config(&new_config, optid, opt, optval, include_set,
+                               pattern_addr_indexer);
+        !rv) {
       send_reply(400, APIStatusCode::FAILURE);
-      return {};
+      return rv;
     }
 
     first = ++eol;

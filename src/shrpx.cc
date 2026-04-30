@@ -3278,8 +3278,8 @@ int process_options(
   if (conf_exists(config->conf_path.data())) {
     Log{NOTICE} << "Loading configuration from " << config->conf_path;
     std::unordered_set<std::string_view> include_set;
-    if (load_config(config, config->conf_path.data(), include_set,
-                    pattern_addr_indexer) == -1) {
+    if (!load_config(config, config->conf_path.data(), include_set,
+                     pattern_addr_indexer)) {
       Log{FATAL} << "Failed to load configuration from " << config->conf_path;
       return -1;
     }
@@ -3293,8 +3293,8 @@ int process_options(
     std::unordered_set<std::string_view> include_set;
 
     for (auto &p : cmdcfgs) {
-      if (parse_config(config, p.first, p.second, include_set,
-                       pattern_addr_indexer) == -1) {
+      if (!parse_config(config, p.first, p.second, include_set,
+                        pattern_addr_indexer)) {
         Log{FATAL} << "Failed to parse command-line argument.";
         return -1;
       }
