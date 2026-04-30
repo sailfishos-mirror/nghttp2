@@ -882,14 +882,12 @@ std::expected<void, Error> ConnectionHandler::quic_ipc_read() {
     return {};
   }
 
-  WorkerEvent wev{
-    .type = WorkerEventType::QUIC_PKT_FORWARD,
-    .quic_pkt = std::move(pkt),
-  };
-
   auto worker = *maybe_worker;
 
-  worker->send(std::move(wev));
+  worker->send(WorkerEvent{
+    .type = WorkerEventType::QUIC_PKT_FORWARD,
+    .quic_pkt = std::move(pkt),
+  });
 
   return {};
 }
