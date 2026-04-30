@@ -147,7 +147,7 @@ void ConnectionHandler::worker_replace_downstream(
   }
 }
 
-int ConnectionHandler::create_single_worker() {
+std::expected<void, Error> ConnectionHandler::create_single_worker() {
   cert_tree_ = tls::create_cert_lookup_tree();
   auto sv_ssl_ctx = tls::setup_server_ssl_context(
     all_ssl_ctx_, indexed_ssl_ctx_, cert_tree_.get()
@@ -199,25 +199,25 @@ int ConnectionHandler::create_single_worker() {
 #endif // defined(ENABLE_HTTP3)
     /* index = */ 0, ticket_keys_, this, config->conn.downstream);
 #ifdef HAVE_MRUBY
-  if (!single_worker_->create_mruby_context()) {
-    return -1;
+  if (auto rv = single_worker_->create_mruby_context(); !rv) {
+    return rv;
   }
 #endif // defined(HAVE_MRUBY)
 
-  if (!single_worker_->setup_server_socket()) {
-    return -1;
+  if (auto rv = single_worker_->setup_server_socket(); !rv) {
+    return rv;
   }
 
 #ifdef ENABLE_HTTP3
-  if (!single_worker_->setup_quic_server_socket()) {
-    return -1;
+  if (auto rv = single_worker_->setup_quic_server_socket(); !rv) {
+    return rv;
   }
 #endif // defined(ENABLE_HTTP3)
 
-  return 0;
+  return {};
 }
 
-int ConnectionHandler::create_worker_thread(size_t num) {
+std::expected<void, Error> ConnectionHandler::create_worker_thread(size_t num) {
 #ifndef NOTHREADS
   assert(workers_.size() == 0);
 
@@ -284,18 +284,20 @@ int ConnectionHandler::create_worker_thread(size_t num) {
 #  endif // defined(ENABLE_HTTP3)
                                i, ticket_keys_, this, config->conn.downstream);
 #  ifdef HAVE_MRUBY
-    if (!worker->create_mruby_context()) {
-      return -1;
+    if (auto rv = worker->create_mruby_context(); !rv) {
+      return rv;
     }
 #  endif // defined(HAVE_MRUBY)
 
-    if (!worker->setup_server_socket()) {
-      return -1;
+    if (auto rv = worker->setup_server_socket(); !rv) {
+      return rv;
     }
 
 #  ifdef ENABLE_HTTP3
-    if ((!apiconf.enabled || i != 0) && !worker->setup_quic_server_socket()) {
-      return -1;
+    if (!apiconf.enabled || i != 0) {
+      if (auto rv = worker->setup_quic_server_socket(); !rv) {
+        return rv;
+      }
     }
 #  endif // defined(ENABLE_HTTP3)
 
@@ -311,7 +313,7 @@ int ConnectionHandler::create_worker_thread(size_t num) {
 
 #endif // !defined(NOTHREADS)
 
-  return 0;
+  return {};
 }
 
 void ConnectionHandler::join_worker() {
@@ -568,18 +570,18 @@ ConnectionHandler::get_quic_indexed_ssl_ctx(size_t idx) const {
 #endif // defined(ENABLE_HTTP3)
 
 #ifdef ENABLE_HTTP3
-int ConnectionHandler::forward_quic_packet(const UpstreamAddr *faddr,
-                                           const Address &remote_addr,
-                                           const Address &local_addr,
-                                           const ngtcp2_pkt_info &pi,
-                                           const WorkerID &wid,
-                                           std::span<const uint8_t> data) {
+std::expected<void, Error> ConnectionHandler::forward_quic_packet(
+  const UpstreamAddr *faddr, const Address &remote_addr,
+  const Address &local_addr, const ngtcp2_pkt_info &pi, const WorkerID &wid,
+  std::span<const uint8_t> data) {
   assert(!get_config()->single_thread);
 
-  auto worker = find_worker(wid);
-  if (worker == nullptr) {
-    return -1;
+  auto maybe_worker = find_worker(wid);
+  if (!maybe_worker) {
+    return std::unexpected{maybe_worker.error()};
   }
+
+  auto worker = *maybe_worker;
 
   worker->send(WorkerEvent{
     .type = WorkerEventType::QUIC_PKT_FORWARD,
@@ -587,7 +589,7 @@ int ConnectionHandler::forward_quic_packet(const UpstreamAddr *faddr,
                                              local_addr, pi, data),
   });
 
-  return 0;
+  return {};
 }
 
 void ConnectionHandler::set_quic_keying_materials(
@@ -605,30 +607,32 @@ void ConnectionHandler::set_worker_ids(std::vector<WorkerID> worker_ids) {
 }
 
 namespace {
-ssize_t find_worker_index(const std::vector<WorkerID> &worker_ids,
-                          const WorkerID &wid) {
+std::expected<size_t, Error>
+find_worker_index(const std::vector<WorkerID> &worker_ids,
+                  const WorkerID &wid) {
   assert(!worker_ids.empty());
 
   if (wid.server != worker_ids[0].server ||
       wid.worker_process != worker_ids[0].worker_process ||
       wid.thread >= worker_ids.size()) {
-    return -1;
+    return std::unexpected{Error::ENTITY_NOT_FOUND};
   }
 
   return wid.thread;
 }
 } // namespace
 
-Worker *ConnectionHandler::find_worker(const WorkerID &wid) const {
-  auto idx = find_worker_index(worker_ids_, wid);
-  if (idx == -1) {
-    return nullptr;
+std::expected<Worker *, Error>
+ConnectionHandler::find_worker(const WorkerID &wid) const {
+  auto maybe_idx = find_worker_index(worker_ids_, wid);
+  if (!maybe_idx) {
+    return std::unexpected{maybe_idx.error()};
   }
 
-  return workers_[as_unsigned(idx)].get();
+  return workers_[*maybe_idx].get();
 }
 
-QUICLingeringWorkerProcess *
+std::expected<QUICLingeringWorkerProcess *, Error>
 ConnectionHandler::match_quic_lingering_worker_process_worker_id(
   const WorkerID &wid) {
   for (auto &lwps : quic_lingering_worker_processes_) {
@@ -637,7 +641,7 @@ ConnectionHandler::match_quic_lingering_worker_process_worker_id(
     }
   }
 
-  return nullptr;
+  return std::unexpected{Error::ENTITY_NOT_FOUND};
 }
 
 #  ifdef HAVE_LIBBPF
@@ -667,7 +671,8 @@ void ConnectionHandler::set_quic_lingering_worker_processes(
   quic_lingering_worker_processes_ = quic_lwps;
 }
 
-int ConnectionHandler::forward_quic_packet_to_lingering_worker_process(
+std::expected<void, Error>
+ConnectionHandler::forward_quic_packet_to_lingering_worker_process(
   QUICLingeringWorkerProcess *quic_lwp, const Address &remote_addr,
   const Address &local_addr, const ngtcp2_pkt_info &pi,
   std::span<const uint8_t> data) {
@@ -723,13 +728,13 @@ int ConnectionHandler::forward_quic_packet_to_lingering_worker_process(
     Log{ERROR} << "Failed to send QUIC IPC message: "
                << xsi_strerror(error, errbuf.data(), errbuf.size());
 
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
 
-  return 0;
+  return {};
 }
 
-int ConnectionHandler::quic_ipc_read() {
+std::expected<void, Error> ConnectionHandler::quic_ipc_read() {
   std::array<uint8_t, 65536> buf;
 
   ssize_t nread;
@@ -745,11 +750,11 @@ int ConnectionHandler::quic_ipc_read() {
     Log{ERROR} << "Failed to read data from QUIC IPC channel: "
                << xsi_strerror(error, errbuf.data(), errbuf.size());
 
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
 
   if (nread == 0) {
-    return 0;
+    return {};
   }
 
   size_t len = 1 + 1 + 1 + 1;
@@ -761,14 +766,14 @@ int ConnectionHandler::quic_ipc_read() {
   // When encoding, REMOTE_ADDRLEN and LOCAL_ADDRLEN are decremented
   // by 1.
   if (static_cast<size_t>(nread) < len) {
-    return 0;
+    return {};
   }
 
   auto p = buf.data();
   if (*p != static_cast<uint8_t>(QUICIPCType::DGRAM_FORWARD)) {
     Log{ERROR} << "Unknown QUICIPCType: " << static_cast<uint32_t>(*p);
 
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   ++p;
@@ -780,7 +785,7 @@ int ConnectionHandler::quic_ipc_read() {
     Log{ERROR} << "The length of remote address is too large: "
                << remote_addrlen;
 
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   len += remote_addrlen;
@@ -788,7 +793,7 @@ int ConnectionHandler::quic_ipc_read() {
   if (static_cast<size_t>(nread) < len) {
     Log{ERROR} << "Insufficient QUIC IPC message length";
 
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   sockaddr_storage ss;
@@ -801,7 +806,7 @@ int ConnectionHandler::quic_ipc_read() {
   if (local_addrlen > sizeof(sockaddr_storage)) {
     Log{ERROR} << "The length of local address is too large: " << local_addrlen;
 
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   len += local_addrlen;
@@ -809,7 +814,7 @@ int ConnectionHandler::quic_ipc_read() {
   if (static_cast<size_t>(nread) < len) {
     Log{ERROR} << "Insufficient QUIC IPC message length";
 
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   memcpy(&ss, p, local_addrlen);
@@ -832,12 +837,12 @@ int ConnectionHandler::quic_ipc_read() {
   if (rv < 0) {
     Log{ERROR} << "ngtcp2_pkt_decode_version_cid: " << ngtcp2_strerror(rv);
 
-    return -1;
+    return std::unexpected{Error::QUIC};
   }
 
   if (vc.dcidlen != SHRPX_QUIC_SCIDLEN) {
     Log{ERROR} << "DCID length is invalid";
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   if (single_worker_) {
@@ -845,7 +850,7 @@ int ConnectionHandler::quic_ipc_read() {
     if (!maybe_faddr) {
       Log{ERROR} << "No suitable upstream address found";
 
-      return 0;
+      return {};
     }
 
     auto quic_conn_handler = single_worker_->get_quic_connection_handler();
@@ -853,27 +858,28 @@ int ConnectionHandler::quic_ipc_read() {
     quic_conn_handler->handle_packet(*maybe_faddr, pkt->remote_addr,
                                      pkt->local_addr, pkt->pi, pkt->data);
 
-    return 0;
+    return {};
   }
 
   auto &qkm = quic_keying_materials_->keying_materials.front();
 
   ConnectionID decrypted_dcid;
 
-  if (!decrypt_quic_connection_id(
+  if (auto rv = decrypt_quic_connection_id(
         decrypted_dcid,
         std::span{vc.dcid, vc.dcidlen}.subspan(SHRPX_QUIC_CID_WORKER_ID_OFFSET),
-        qkm.cid_decryption_ctx)) {
-    return -1;
+        qkm.cid_decryption_ctx);
+      !rv) {
+    return rv;
   }
 
-  auto worker = find_worker(decrypted_dcid.worker);
-  if (worker == nullptr) {
+  auto maybe_worker = find_worker(decrypted_dcid.worker);
+  if (!maybe_worker) {
     if (log_enabled(INFO)) {
       Log{INFO} << "No worker to match Worker ID";
     }
 
-    return 0;
+    return {};
   }
 
   WorkerEvent wev{
@@ -881,9 +887,11 @@ int ConnectionHandler::quic_ipc_read() {
     .quic_pkt = std::move(pkt),
   };
 
+  auto worker = *maybe_worker;
+
   worker->send(std::move(wev));
 
-  return 0;
+  return {};
 }
 #endif // defined(ENABLE_HTTP3)
 

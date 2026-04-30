@@ -146,14 +146,12 @@ void QUICConnectionHandler::handle_packet(const UpstreamAddr *faddr,
 
       if (qkm != &qkms->keying_materials.front() ||
           decrypted_dcid.worker != worker_->get_worker_id()) {
-        auto quic_lwp =
+        auto maybe_quic_lwp =
           conn_handler->match_quic_lingering_worker_process_worker_id(
             decrypted_dcid.worker);
-        if (quic_lwp) {
-          if (conn_handler->forward_quic_packet_to_lingering_worker_process(
-                quic_lwp, remote_addr, local_addr, pi, data) == 0) {
-            return;
-          }
+        if (maybe_quic_lwp) {
+          conn_handler->forward_quic_packet_to_lingering_worker_process(
+            *maybe_quic_lwp, remote_addr, local_addr, pi, data);
 
           return;
         }
@@ -340,7 +338,7 @@ void QUICConnectionHandler::handle_packet(const UpstreamAddr *faddr,
           decrypted_dcid.worker != worker_->get_worker_id()) {
         if (!config->single_thread && conn_handler->forward_quic_packet(
                                         faddr, remote_addr, local_addr, pi,
-                                        decrypted_dcid.worker, data) == 0) {
+                                        decrypted_dcid.worker, data)) {
           return;
         }
 

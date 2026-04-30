@@ -199,7 +199,7 @@ namespace {
 void quic_ipc_readcb(struct ev_loop *loop, ev_io *w, int revents) {
   auto conn_handler = static_cast<ConnectionHandler *>(w->data);
 
-  if (conn_handler->quic_ipc_read() != 0) {
+  if (!conn_handler->quic_ipc_read()) {
     Log{ERROR} << "Failed to read data from QUIC IPC channel";
 
     return;
@@ -628,8 +628,7 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
 #endif // defined(ENABLE_HTTP3)
 
   if (config->single_thread) {
-    rv = conn_handler->create_single_worker();
-    if (rv != 0) {
+    if (!conn_handler->create_single_worker()) {
       return -1;
     }
   } else {
@@ -646,8 +645,7 @@ int worker_process_event_loop(WorkerProcessConfig *wpconf) {
     }
 #endif // !defined(NOTHREADS)
 
-    rv = conn_handler->create_worker_thread(config->num_worker);
-    if (rv != 0) {
+    if (!conn_handler->create_worker_thread(config->num_worker)) {
       return -1;
     }
 
