@@ -1437,8 +1437,9 @@ std::expected<void, Error> configure_downstream_group(Config *config,
                                                       bool numeric_addr_only,
                                                       const TLSConfig &tlsconf);
 
-int resolve_hostname(Address *addr, const char *hostname, uint16_t port,
-                     int family, int additional_flags = 0);
+std::expected<Address, Error> resolve_hostname(const char *hostname,
+                                               uint16_t port, int family,
+                                               int additional_flags = 0);
 
 } // namespace shrpx
 

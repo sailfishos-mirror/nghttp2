@@ -4809,11 +4809,14 @@ configure_downstream_group(Config *config, bool http2_proxy,
                                           std::ranges::begin(hostport_buf));
 
       if (!addr.dns) {
-        if (resolve_hostname(&addr.addr, addr.host.data(), addr.port,
-                             downstreamconf.family, resolve_flags) == -1) {
+        auto maybe_addr = resolve_hostname(
+          addr.host.data(), addr.port, downstreamconf.family, resolve_flags);
+        if (!maybe_addr) {
           Log{FATAL} << "Resolving backend address failed: " << hostport;
-          return std::unexpected{Error::INTERNAL};
+          return std::unexpected{maybe_addr.error()};
         }
+
+        addr.addr = std::move(*maybe_addr);
 
         if (log_enabled(INFO)) {
           Log{INFO} << "Resolved backend address: " << hostport << " -> "
@@ -4881,8 +4884,9 @@ configure_downstream_group(Config *config, bool http2_proxy,
   return {};
 }
 
-int resolve_hostname(Address *addr, const char *hostname, uint16_t port,
-                     int family, int additional_flags) {
+std::expected<Address, Error> resolve_hostname(const char *hostname,
+                                               uint16_t port, int family,
+                                               int additional_flags) {
   int rv;
 
   auto service = util::utos(port);
@@ -4909,7 +4913,7 @@ int resolve_hostname(Address *addr, const char *hostname, uint16_t port,
   if (rv != 0) {
     Log{FATAL} << "Unable to resolve address for " << hostname << ": "
                << gai_strerror(rv);
-    return -1;
+    return std::unexpected{Error::LIBC};
   }
 
   auto res_d = defer([res] { freeaddrinfo(res); });
@@ -4921,7 +4925,7 @@ int resolve_hostname(Address *addr, const char *hostname, uint16_t port,
     Log{FATAL} << "Address resolution for " << hostname
                << " failed: " << gai_strerror(rv);
 
-    return -1;
+    return std::unexpected{Error::LIBC};
   }
 
   if (log_enabled(INFO)) {
@@ -4929,9 +4933,10 @@ int resolve_hostname(Address *addr, const char *hostname, uint16_t port,
               << " succeeded: " << host.data();
   }
 
-  addr->set(res->ai_addr);
+  Address addr;
+  addr.set(res->ai_addr);
 
-  return 0;
+  return addr;
 }
 
 #ifdef ENABLE_HTTP3

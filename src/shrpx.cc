@@ -3449,11 +3449,15 @@ int process_options(
   if (!proxy.host.empty()) {
     auto hostport = util::make_hostport(proxy.host, proxy.port,
                                         std::ranges::begin(hostport_buf));
-    if (resolve_hostname(&proxy.addr, proxy.host.data(), proxy.port,
-                         AF_UNSPEC) == -1) {
+    auto maybe_addr =
+      resolve_hostname(proxy.host.data(), proxy.port, AF_UNSPEC);
+    if (!maybe_addr) {
       Log{FATAL} << "Resolving backend HTTP proxy address failed: " << hostport;
       return -1;
     }
+
+    proxy.addr = std::move(*maybe_addr);
+
     Log{NOTICE} << "Backend HTTP proxy address: " << hostport << " -> "
                 << util::to_numeric_addr(&proxy.addr);
   }
@@ -3464,12 +3468,16 @@ int process_options(
       auto hostport =
         util::make_hostport(memcachedconf.host, memcachedconf.port,
                             std::ranges::begin(hostport_buf));
-      if (resolve_hostname(&memcachedconf.addr, memcachedconf.host.data(),
-                           memcachedconf.port, memcachedconf.family) == -1) {
+      auto maybe_addr = resolve_hostname(
+        memcachedconf.host.data(), memcachedconf.port, memcachedconf.family);
+      if (!maybe_addr) {
         Log{FATAL} << "Resolving memcached address for TLS ticket key failed: "
                    << hostport;
         return -1;
       }
+
+      memcachedconf.addr = std::move(*maybe_addr);
+
       Log{NOTICE} << "Memcached address for TLS ticket key: " << hostport
                   << " -> " << util::to_numeric_addr(&memcachedconf.addr);
       if (memcachedconf.tls) {
