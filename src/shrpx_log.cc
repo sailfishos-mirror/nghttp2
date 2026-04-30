@@ -80,13 +80,14 @@ int Log::severity_thres_ = NOTICE;
 
 void Log::set_severity_level(int severity) { severity_thres_ = severity; }
 
-int Log::get_severity_level_by_name(std::string_view name) {
+std::expected<int, Error>
+Log::get_severity_level_by_name(std::string_view name) {
   for (size_t i = 0, max = array_size(SEVERITY_STR); i < max; ++i) {
     if (name == SEVERITY_STR[i]) {
       return static_cast<int>(i);
     }
   }
-  return -1;
+  return std::unexpected{Error::INVALID_ARGUMENT};
 }
 
 int severity_to_syslog_level(int severity) {

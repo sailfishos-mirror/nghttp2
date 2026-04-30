@@ -206,9 +206,9 @@ public:
     update_full();
   }
   static void set_severity_level(int severity);
-  // Returns the severity level by |name|.  Returns -1 if |name| is
-  // unknown.
-  static int get_severity_level_by_name(std::string_view name);
+  // Returns the severity level by |name|.
+  static std::expected<int, Error>
+  get_severity_level_by_name(std::string_view name);
   static bool log_enabled(int severity) { return severity >= severity_thres_; }
 
   enum {
