@@ -1432,9 +1432,10 @@ read_quic_secret_file(std::string_view path);
 // Returns string representation of |proto|.
 std::string_view strproto(Proto proto);
 
-int configure_downstream_group(Config *config, bool http2_proxy,
-                               bool numeric_addr_only,
-                               const TLSConfig &tlsconf);
+std::expected<void, Error> configure_downstream_group(Config *config,
+                                                      bool http2_proxy,
+                                                      bool numeric_addr_only,
+                                                      const TLSConfig &tlsconf);
 
 int resolve_hostname(Address *addr, const char *hostname, uint16_t port,
                      int family, int additional_flags = 0);

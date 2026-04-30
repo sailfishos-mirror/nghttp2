@@ -3438,8 +3438,8 @@ int process_options(
     return -1;
   }
 
-  if (configure_downstream_group(config, config->http2_proxy, false, tlsconf) !=
-      0) {
+  if (!configure_downstream_group(config, config->http2_proxy, false,
+                                  tlsconf)) {
     return -1;
   }
 

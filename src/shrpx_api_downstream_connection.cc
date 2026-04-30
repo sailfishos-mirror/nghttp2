@@ -413,10 +413,11 @@ std::expected<void, Error> APIDownstreamConnection::handle_backendconfig() {
   }
 
   auto &tlsconf = config->tls;
-  if (configure_downstream_group(&new_config, config->http2_proxy, true,
-                                 tlsconf) != 0) {
+  if (auto rv = configure_downstream_group(&new_config, config->http2_proxy,
+                                           true, tlsconf);
+      !rv) {
     send_reply(400, APIStatusCode::FAILURE);
-    return {};
+    return rv;
   }
 
   auto conn_handler = worker_->get_connection_handler();
