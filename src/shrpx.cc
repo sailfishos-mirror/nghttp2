@@ -1405,8 +1405,7 @@ pid_t fork_worker_process(int &main_ipc_fd
       .quic_lingering_worker_processes = std::move(quic_lwps),
 #endif // defined(ENABLE_HTTP3)
     };
-    rv = worker_process_event_loop(&wpconf);
-    if (rv != 0) {
+    if (!worker_process_event_loop(&wpconf)) {
       Log{FATAL} << "Worker process returned error";
 
       if (config->single_process) {
