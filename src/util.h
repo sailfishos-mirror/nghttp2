@@ -1337,7 +1337,7 @@ std::mt19937 make_mt19937();
 
 // daemonize calls daemon(3).  If __APPLE__ is defined, it implements
 // daemon() using fork().
-int daemonize(int nochdir, int noclose);
+std::expected<void, Error> daemonize(int nochdir, int noclose);
 
 // Returns |s| from which trailing white spaces (SPC or HTAB) are
 // removed.  If any white spaces are removed, new string is allocated

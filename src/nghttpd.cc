@@ -452,7 +452,7 @@ int main(int argc, char **argv) {
       std::cerr << "-d option must be specified when -D is used." << std::endl;
       exit(EXIT_FAILURE);
     }
-    if (util::daemonize(0, 0) == -1) {
+    if (!util::daemonize(0, 0)) {
       perror("daemon");
       exit(EXIT_FAILURE);
     }
