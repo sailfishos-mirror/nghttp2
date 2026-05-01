@@ -375,7 +375,7 @@ void rps_cb(struct ev_loop *loop, ev_timer *w, int revents) {
   client->rps_req_pending -= nreq;
 
   for (; nreq > 0; --nreq) {
-    if (client->submit_request() != 0) {
+    if (!client->submit_request()) {
       client->process_request_failure();
       break;
     }
@@ -422,7 +422,7 @@ void client_request_timeout_cb(struct ev_loop *loop, ev_timer *w, int revents) {
     return;
   }
 
-  if (client->submit_request() != 0) {
+  if (!client->submit_request()) {
     ev_timer_stop(client->worker->loop, w);
     client->process_request_failure();
     return;
@@ -437,7 +437,7 @@ void client_request_timeout_cb(struct ev_loop *loop, ev_timer *w, int revents) {
     config.timings[client->reqidx] - config.timings[client->reqidx - 1];
 
   while (duration < std::chrono::duration<double>(1e-9)) {
-    if (client->submit_request() != 0) {
+    if (!client->submit_request()) {
       ev_timer_stop(client->worker->loop, w);
       client->process_request_failure();
       return;
@@ -790,13 +790,13 @@ void Client::disconnect() {
   final = false;
 }
 
-int Client::submit_request() {
-  if (!session->submit_request()) {
-    return -1;
+std::expected<void, Error> Client::submit_request() {
+  if (auto rv = session->submit_request(); !rv) {
+    return rv;
   }
 
   if (worker->current_phase != Phase::MAIN_DURATION) {
-    return 0;
+    return {};
   }
 
   ++worker->stats.req_started;
@@ -811,7 +811,7 @@ int Client::submit_request() {
     ev_timer_start(worker->loop, &conn_active_watcher);
   }
 
-  return 0;
+  return {};
 }
 
 void Client::process_timedout_streams() {
@@ -1257,12 +1257,12 @@ void Client::on_stream_close(int64_t stream_id, bool success, bool final) {
         ev_feed_event(worker->loop, &request_timeout_watcher, EV_TIMER);
       }
     } else if (!config.rps_enabled()) {
-      if (submit_request() != 0) {
+      if (!submit_request()) {
         process_request_failure();
       }
     } else if (rps_req_pending) {
       --rps_req_pending;
-      if (submit_request() != 0) {
+      if (!submit_request()) {
         process_request_failure();
       }
     } else {
@@ -1375,7 +1375,7 @@ int Client::connection_made() {
 
     ++rps_req_inflight;
 
-    if (submit_request() != 0) {
+    if (!submit_request()) {
       process_request_failure();
     }
   } else if (!config.timing_script) {
@@ -1384,7 +1384,7 @@ int Client::connection_made() {
                   : std::min(req_left, session->max_concurrent_streams());
 
     for (; nreq > 0; --nreq) {
-      if (submit_request() != 0) {
+      if (!submit_request()) {
         process_request_failure();
         break;
       }
@@ -1393,7 +1393,7 @@ int Client::connection_made() {
     auto duration = config.timings[reqidx];
 
     while (duration < std::chrono::duration<double>(1e-9)) {
-      if (submit_request() != 0) {
+      if (!submit_request()) {
         process_request_failure();
         break;
       }

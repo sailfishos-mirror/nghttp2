@@ -485,7 +485,7 @@ struct Client {
   std::expected<void, Error> try_again_or_fail();
   void timeout();
   void restart_timeout();
-  int submit_request();
+  std::expected<void, Error> submit_request();
   void process_request_failure();
   void process_timedout_streams();
   void process_abandoned_streams();
