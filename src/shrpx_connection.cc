@@ -886,7 +886,7 @@ std::expected<TCPHint, Error> Connection::get_tcp_hint() const {
       Log{INFO} << "writable_size is too small: " << writable_size;
     }
     // TODO is this required?
-    writable_size = std::max(writable_size, static_cast<size_t>(536 * 2));
+    writable_size = std::max(writable_size, 536UZ * 2UZ);
   }
 
   // if (log_enabled(INFO)) {

@@ -1761,9 +1761,9 @@ Worker::Worker(uint32_t id, SSL_CTX *ssl_ctx, size_t req_todo, size_t nclients,
     max_samples(max_samples),
     next_client_id(0) {
   if (!config->is_rate_mode() && !config->is_timing_based_mode()) {
-    progress_interval = std::max(static_cast<size_t>(1), req_todo / 10);
+    progress_interval = std::max(1UZ, req_todo / 10);
   } else {
-    progress_interval = std::max(static_cast<size_t>(1), nclients / 10);
+    progress_interval = std::max(1UZ, nclients / 10);
   }
 
   // Below timeout is not needed in case of timing-based benchmarking
@@ -2495,7 +2495,7 @@ void plot_histogram(std::ostream &o, const std::vector<T> &data, F formatter) {
     size_t len;
 
     if (counts[i]) {
-      len = std::max(static_cast<size_t>(1), counts[i] * max_bar / max_count);
+      len = std::max(1UZ, counts[i] * max_bar / max_count);
     } else {
       len = 0;
     }
@@ -3856,7 +3856,7 @@ int main(int argc, char **argv) {
   auto rate_per_thread_rem = config.rate % config.nthreads;
 
   size_t max_samples_per_thread =
-    std::max(static_cast<size_t>(256), MAX_SAMPLES / config.nthreads);
+    std::max(256UZ, MAX_SAMPLES / config.nthreads);
 
   std::mutex mu;
   std::condition_variable cv;
