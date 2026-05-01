@@ -38,6 +38,7 @@
 #include <memory>
 #include <string_view>
 #include <span>
+#include <expected>
 
 #include "ssl_compat.h"
 
@@ -57,6 +58,7 @@
 #include "buffer.h"
 #include "template.h"
 #include "allocator.h"
+#include "errors.h"
 
 namespace nghttp2 {
 
@@ -174,28 +176,34 @@ public:
 
   void remove_self();
   void start_settings_timer();
-  int on_read();
-  int on_write();
-  int connection_made();
-  int verify_alpn_result();
+  std::expected<void, Error> on_read();
+  std::expected<void, Error> on_write();
+  std::expected<void, Error> connection_made();
+  std::expected<void, Error> verify_alpn_result();
 
-  int submit_file_response(std::string_view status, Stream *stream,
-                           time_t last_modified, off_t file_length,
-                           const std::string *content_type,
-                           nghttp2_data_provider2 *data_prd);
+  std::expected<void, Error>
+  submit_file_response(std::string_view status, Stream *stream,
+                       time_t last_modified, off_t file_length,
+                       const std::string *content_type,
+                       nghttp2_data_provider2 *data_prd);
 
-  int submit_response(std::string_view status, int32_t stream_id,
-                      nghttp2_data_provider2 *data_prd);
+  std::expected<void, Error> submit_response(std::string_view status,
+                                             int32_t stream_id,
+                                             nghttp2_data_provider2 *data_prd);
 
-  int submit_response(std::string_view status, int32_t stream_id,
-                      const HeaderRefs &headers,
-                      nghttp2_data_provider2 *data_prd);
+  std::expected<void, Error> submit_response(std::string_view status,
+                                             int32_t stream_id,
+                                             const HeaderRefs &headers,
+                                             nghttp2_data_provider2 *data_prd);
 
-  int submit_non_final_response(const std::string &status, int32_t stream_id);
+  std::expected<void, Error>
+  submit_non_final_response(const std::string &status, int32_t stream_id);
 
-  int submit_push_promise(Stream *stream, std::string_view push_path);
+  std::expected<void, Error> submit_push_promise(Stream *stream,
+                                                 std::string_view push_path);
 
-  int submit_rst_stream(Stream *stream, uint32_t error_code);
+  std::expected<void, Error> submit_rst_stream(Stream *stream,
+                                               uint32_t error_code);
 
   void add_stream(int32_t stream_id, std::unique_ptr<Stream> stream);
   void remove_stream(int32_t stream_id);
@@ -206,13 +214,13 @@ public:
   void remove_settings_timer();
   void terminate_session(uint32_t error_code);
 
-  int fill_wb();
+  std::expected<void, Error> fill_wb();
 
-  int read_clear();
-  int write_clear();
-  int tls_handshake();
-  int read_tls();
-  int write_tls();
+  std::expected<void, Error> read_clear();
+  std::expected<void, Error> write_clear();
+  std::expected<void, Error> tls_handshake();
+  std::expected<void, Error> read_tls();
+  std::expected<void, Error> write_tls();
 
   struct ev_loop *get_loop() const;
 
@@ -226,7 +234,7 @@ private:
   ev_timer settings_timerev_;
   std::unordered_map<int32_t, std::unique_ptr<Stream>> id2stream_;
   WriteBuf wb_;
-  std::function<int(Http2Handler &)> read_, write_;
+  std::function<std::expected<void, Error>(Http2Handler &)> read_, write_;
   int64_t session_id_;
   nghttp2_session *session_;
   Sessions *sessions_;
@@ -243,8 +251,7 @@ struct StatusPage {
 class HttpServer {
 public:
   HttpServer(const Config *config);
-  int listen();
-  int run();
+  std::expected<void, Error> run();
   const Config *get_config() const;
   const StatusPage *get_status_page(int status) const;
 
