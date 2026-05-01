@@ -490,7 +490,7 @@ int main(int argc, char **argv) {
   reset_timer();
 
   HttpServer server(&config);
-  if (server.run() != 0) {
+  if (!server.run()) {
     exit(EXIT_FAILURE);
   }
   return 0;
