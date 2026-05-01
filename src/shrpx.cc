@@ -1326,6 +1326,9 @@ fork_worker_process(const std::vector<InheritedUNIXDomainAddr> &iaddrs
 #ifdef ENABLE_HTTP3
   auto maybe_quic_ipc_fd = create_quic_ipc_socket();
   if (!maybe_quic_ipc_fd) {
+    close(ipc_fd[0]);
+    close(ipc_fd[1]);
+
     return std::unexpected{maybe_quic_ipc_fd.error()};
   }
 
@@ -1340,6 +1343,10 @@ fork_worker_process(const std::vector<InheritedUNIXDomainAddr> &iaddrs
 
     close(ipc_fd[0]);
     close(ipc_fd[1]);
+#ifdef ENABLE_HTTP3
+    close(quic_ipc_fd[0]);
+    close(quic_ipc_fd[1]);
+#endif // defined(ENABLE_HTTP3)
 
     return std::unexpected{maybe_oldset.error()};
   }
