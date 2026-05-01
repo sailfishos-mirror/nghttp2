@@ -4938,10 +4938,7 @@ std::expected<Address, Error> resolve_hostname(const char *hostname,
               << " succeeded: " << host.data();
   }
 
-  Address addr;
-  addr.set(res->ai_addr);
-
-  return addr;
+  return Address{res->ai_addr};
 }
 
 #ifdef ENABLE_HTTP3
