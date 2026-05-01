@@ -555,20 +555,25 @@ struct Client {
   void send_blocked_packet();
   void quic_close_connection();
 
-  int quic_handshake_completed();
-  int quic_recv_stream_data(uint32_t flags, int64_t stream_id,
-                            std::span<const uint8_t> data);
-  int quic_acked_stream_data_offset(int64_t stream_id, size_t datalen);
-  int quic_stream_close(int64_t stream_id, uint64_t app_error_code);
-  int quic_stream_reset(int64_t stream_id, uint64_t app_error_code);
-  int quic_stream_stop_sending(int64_t stream_id, uint64_t app_error_code);
-  int quic_extend_max_local_streams();
-  int quic_extend_max_stream_data(int64_t stream_id);
+  std::expected<void, Error> quic_handshake_completed();
+  std::expected<void, Error>
+  quic_recv_stream_data(uint32_t flags, int64_t stream_id,
+                        std::span<const uint8_t> data);
+  std::expected<void, Error> quic_acked_stream_data_offset(int64_t stream_id,
+                                                           size_t datalen);
+  std::expected<void, Error> quic_stream_close(int64_t stream_id,
+                                               uint64_t app_error_code);
+  std::expected<void, Error> quic_stream_reset(int64_t stream_id,
+                                               uint64_t app_error_code);
+  std::expected<void, Error> quic_stream_stop_sending(int64_t stream_id,
+                                                      uint64_t app_error_code);
+  std::expected<void, Error> quic_extend_max_local_streams();
+  std::expected<void, Error> quic_extend_max_stream_data(int64_t stream_id);
 
-  int quic_pkt_timeout();
+  std::expected<void, Error> quic_pkt_timeout();
   void quic_restart_pkt_timer();
   void quic_write_qlog(const void *data, size_t datalen);
-  int quic_make_http3_session();
+  std::expected<void, Error> quic_make_http3_session();
 #endif // defined(ENABLE_HTTP3)
 };
 

@@ -56,7 +56,7 @@ namespace {
 int handshake_completed(ngtcp2_conn *conn, void *user_data) {
   auto c = static_cast<Client *>(user_data);
 
-  if (c->quic_handshake_completed() != 0) {
+  if (!c->quic_handshake_completed()) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
 
@@ -64,14 +64,16 @@ int handshake_completed(ngtcp2_conn *conn, void *user_data) {
 }
 } // namespace
 
-int Client::quic_handshake_completed() { return connection_made() ? 0 : -1; }
+std::expected<void, Error> Client::quic_handshake_completed() {
+  return connection_made();
+}
 
 namespace {
 int recv_stream_data(ngtcp2_conn *conn, uint32_t flags, int64_t stream_id,
                      uint64_t offset, const uint8_t *data, size_t datalen,
                      void *user_data, void *stream_user_data) {
   auto c = static_cast<Client *>(user_data);
-  if (c->quic_recv_stream_data(flags, stream_id, {data, datalen}) != 0) {
+  if (!c->quic_recv_stream_data(flags, stream_id, {data, datalen})) {
     // TODO Better to do this gracefully rather than
     // NGTCP2_ERR_CALLBACK_FAILURE.  Perhaps, call
     // ngtcp2_conn_write_application_close() ?
@@ -81,8 +83,9 @@ int recv_stream_data(ngtcp2_conn *conn, uint32_t flags, int64_t stream_id,
 }
 } // namespace
 
-int Client::quic_recv_stream_data(uint32_t flags, int64_t stream_id,
-                                  std::span<const uint8_t> data) {
+std::expected<void, Error>
+Client::quic_recv_stream_data(uint32_t flags, int64_t stream_id,
+                              std::span<const uint8_t> data) {
   if (worker->current_phase == Phase::MAIN_DURATION) {
     worker->stats.bytes_total += data.size();
   }
@@ -90,14 +93,14 @@ int Client::quic_recv_stream_data(uint32_t flags, int64_t stream_id,
   auto s = static_cast<Http3Session *>(session.get());
   auto nconsumed = s->read_stream(flags, stream_id, data);
   if (nconsumed == -1) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   ngtcp2_conn_extend_max_stream_offset(quic.conn, stream_id,
                                        static_cast<uint64_t>(nconsumed));
   ngtcp2_conn_extend_max_offset(quic.conn, static_cast<uint64_t>(nconsumed));
 
-  return 0;
+  return {};
 }
 
 namespace {
@@ -105,19 +108,20 @@ int acked_stream_data_offset(ngtcp2_conn *conn, int64_t stream_id,
                              uint64_t offset, uint64_t datalen, void *user_data,
                              void *stream_user_data) {
   auto c = static_cast<Client *>(user_data);
-  if (c->quic_acked_stream_data_offset(stream_id, datalen) != 0) {
+  if (!c->quic_acked_stream_data_offset(stream_id, datalen)) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
   return 0;
 }
 } // namespace
 
-int Client::quic_acked_stream_data_offset(int64_t stream_id, size_t datalen) {
+std::expected<void, Error>
+Client::quic_acked_stream_data_offset(int64_t stream_id, size_t datalen) {
   auto s = static_cast<Http3Session *>(session.get());
   if (s->add_ack_offset(stream_id, datalen) != 0) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
-  return 0;
+  return {};
 }
 
 namespace {
@@ -130,19 +134,20 @@ int stream_close(ngtcp2_conn *conn, uint32_t flags, int64_t stream_id,
     app_error_code = NGHTTP3_H3_NO_ERROR;
   }
 
-  if (c->quic_stream_close(stream_id, app_error_code) != 0) {
+  if (!c->quic_stream_close(stream_id, app_error_code)) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
   return 0;
 }
 } // namespace
 
-int Client::quic_stream_close(int64_t stream_id, uint64_t app_error_code) {
+std::expected<void, Error> Client::quic_stream_close(int64_t stream_id,
+                                                     uint64_t app_error_code) {
   auto s = static_cast<Http3Session *>(session.get());
   if (s->close_stream(stream_id, app_error_code) != 0) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
-  return 0;
+  return {};
 }
 
 namespace {
@@ -150,19 +155,20 @@ int stream_reset(ngtcp2_conn *conn, int64_t stream_id, uint64_t final_size,
                  uint64_t app_error_code, void *user_data,
                  void *stream_user_data) {
   auto c = static_cast<Client *>(user_data);
-  if (c->quic_stream_reset(stream_id, app_error_code) != 0) {
+  if (!c->quic_stream_reset(stream_id, app_error_code)) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
   return 0;
 }
 } // namespace
 
-int Client::quic_stream_reset(int64_t stream_id, uint64_t app_error_code) {
+std::expected<void, Error> Client::quic_stream_reset(int64_t stream_id,
+                                                     uint64_t app_error_code) {
   auto s = static_cast<Http3Session *>(session.get());
   if (s->shutdown_stream_read(stream_id) != 0) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
-  return 0;
+  return {};
 }
 
 namespace {
@@ -170,20 +176,20 @@ int stream_stop_sending(ngtcp2_conn *conn, int64_t stream_id,
                         uint64_t app_error_code, void *user_data,
                         void *stream_user_data) {
   auto c = static_cast<Client *>(user_data);
-  if (c->quic_stream_stop_sending(stream_id, app_error_code) != 0) {
+  if (!c->quic_stream_stop_sending(stream_id, app_error_code)) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
   return 0;
 }
 } // namespace
 
-int Client::quic_stream_stop_sending(int64_t stream_id,
-                                     uint64_t app_error_code) {
+std::expected<void, Error>
+Client::quic_stream_stop_sending(int64_t stream_id, uint64_t app_error_code) {
   auto s = static_cast<Http3Session *>(session.get());
   if (s->shutdown_stream_read(stream_id) != 0) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
-  return 0;
+  return {};
 }
 
 namespace {
@@ -191,7 +197,7 @@ int extend_max_local_streams_bidi(ngtcp2_conn *conn, uint64_t max_streams,
                                   void *user_data) {
   auto c = static_cast<Client *>(user_data);
 
-  if (c->quic_extend_max_local_streams() != 0) {
+  if (!c->quic_extend_max_local_streams()) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
 
@@ -199,12 +205,12 @@ int extend_max_local_streams_bidi(ngtcp2_conn *conn, uint64_t max_streams,
 }
 } // namespace
 
-int Client::quic_extend_max_local_streams() {
+std::expected<void, Error> Client::quic_extend_max_local_streams() {
   auto s = static_cast<Http3Session *>(session.get());
   if (s->extend_max_local_streams() != 0) {
-    return NGTCP2_ERR_CALLBACK_FAILURE;
+    return std::unexpected{Error::INTERNAL};
   }
-  return 0;
+  return {};
 }
 
 namespace {
@@ -213,7 +219,7 @@ int extend_max_stream_data(ngtcp2_conn *conn, int64_t stream_id,
                            void *stream_user_data) {
   auto c = static_cast<Client *>(user_data);
 
-  if (c->quic_extend_max_stream_data(stream_id) != 0) {
+  if (!c->quic_extend_max_stream_data(stream_id)) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
 
@@ -221,12 +227,13 @@ int extend_max_stream_data(ngtcp2_conn *conn, int64_t stream_id,
 }
 } // namespace
 
-int Client::quic_extend_max_stream_data(int64_t stream_id) {
+std::expected<void, Error>
+Client::quic_extend_max_stream_data(int64_t stream_id) {
   auto s = static_cast<Http3Session *>(session.get());
   if (s->unblock_stream(stream_id) != 0) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
-  return 0;
+  return {};
 }
 
 namespace {
@@ -317,7 +324,7 @@ int recv_rx_key(ngtcp2_conn *conn, ngtcp2_encryption_level level,
 
   auto c = static_cast<Client *>(user_data);
 
-  if (c->quic_make_http3_session() != 0) {
+  if (!c->quic_make_http3_session()) {
     return NGTCP2_ERR_CALLBACK_FAILURE;
   }
 
@@ -325,14 +332,14 @@ int recv_rx_key(ngtcp2_conn *conn, ngtcp2_encryption_level level,
 }
 } // namespace
 
-int Client::quic_make_http3_session() {
+std::expected<void, Error> Client::quic_make_http3_session() {
   auto s = std::make_unique<Http3Session>(this);
   if (s->init_conn() == -1) {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
   session = std::move(s);
 
-  return 0;
+  return {};
 }
 
 namespace {
@@ -541,7 +548,7 @@ void Client::quic_close_connection() {
 void quic_pkt_timeout_cb(struct ev_loop *loop, ev_timer *w, int revents) {
   auto c = static_cast<Client *>(w->data);
 
-  if (c->quic_pkt_timeout() != 0) {
+  if (!c->quic_pkt_timeout()) {
     c->fail();
     c->worker->free_client(c);
     delete c;
@@ -549,19 +556,19 @@ void quic_pkt_timeout_cb(struct ev_loop *loop, ev_timer *w, int revents) {
   }
 }
 
-int Client::quic_pkt_timeout() {
+std::expected<void, Error> Client::quic_pkt_timeout() {
   int rv;
   auto now = quic_timestamp();
 
   rv = ngtcp2_conn_handle_expiry(quic.conn, now);
   if (rv != 0) {
     ngtcp2_ccerr_set_liberr(&quic.last_error, rv, nullptr, 0);
-    return -1;
+    return std::unexpected{Error::QUIC};
   }
 
   signal_write();
 
-  return 0;
+  return {};
 }
 
 void Client::quic_restart_pkt_timer() {
