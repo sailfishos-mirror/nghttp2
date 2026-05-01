@@ -46,10 +46,10 @@ public:
   virtual std::expected<void, Error> submit_request() = 0;
   // Called when incoming bytes are available. The subclass has to
   // return the number of bytes read.
-  virtual int on_read(std::span<const uint8_t> data) = 0;
+  virtual std::expected<void, Error> on_read(std::span<const uint8_t> data) = 0;
   // Called when write is available. Returns 0 on success, otherwise
   // return -1.
-  virtual int on_write() = 0;
+  virtual std::expected<void, Error> on_write() = 0;
   // Called when the underlying session must be terminated.
   virtual void terminate() = 0;
   // Return the maximum concurrency per connection

@@ -279,36 +279,37 @@ std::expected<void, Error> Http2Session::submit_request() {
   return {};
 }
 
-int Http2Session::on_read(std::span<const uint8_t> data) {
+std::expected<void, Error>
+Http2Session::on_read(std::span<const uint8_t> data) {
   auto rv = nghttp2_session_mem_recv2(session_, data.data(), data.size());
   if (rv < 0) {
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   assert(static_cast<size_t>(rv) == data.size());
 
   if (nghttp2_session_want_read(session_) == 0 &&
       nghttp2_session_want_write(session_) == 0 && client_->wb.rleft() == 0) {
-    return -1;
+    return std::unexpected{Error::DONE};
   }
 
   client_->signal_write();
 
-  return 0;
+  return {};
 }
 
-int Http2Session::on_write() {
+std::expected<void, Error> Http2Session::on_write() {
   auto rv = nghttp2_session_send(session_);
   if (rv != 0) {
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   if (nghttp2_session_want_read(session_) == 0 &&
       nghttp2_session_want_write(session_) == 0 && client_->wb.rleft() == 0) {
-    return -1;
+    return std::unexpected{Error::DONE};
   }
 
-  return 0;
+  return {};
 }
 
 void Http2Session::terminate() {

@@ -1427,7 +1427,7 @@ int Client::on_read(std::span<const uint8_t> data) {
   if (worker->current_phase == Phase::MAIN_DURATION) {
     worker->stats.bytes_total += data.size();
   }
-  if (rv != 0) {
+  if (!rv) {
     return -1;
   }
   signal_write();
@@ -1439,7 +1439,7 @@ int Client::on_write() {
     return 0;
   }
 
-  if (session->on_write() != 0) {
+  if (!session->on_write()) {
     return -1;
   }
   return 0;

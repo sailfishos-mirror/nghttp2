@@ -39,8 +39,8 @@ public:
   ~Http2Session() override;
   void on_connect() override;
   std::expected<void, Error> submit_request() override;
-  int on_read(std::span<const uint8_t> data) override;
-  int on_write() override;
+  std::expected<void, Error> on_read(std::span<const uint8_t> data) override;
+  std::expected<void, Error> on_write() override;
   void terminate() override;
   size_t max_concurrent_streams() override;
 

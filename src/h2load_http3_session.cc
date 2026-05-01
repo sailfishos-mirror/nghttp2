@@ -131,10 +131,6 @@ std::expected<void, Error> Http3Session::submit_request_internal() {
   return {};
 }
 
-int Http3Session::on_read(std::span<const uint8_t> data) { return -1; }
-
-int Http3Session::on_write() { return -1; }
-
 void Http3Session::terminate() {}
 
 size_t Http3Session::max_concurrent_streams() {
