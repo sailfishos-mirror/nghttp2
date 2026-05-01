@@ -101,6 +101,7 @@ const MunitTest tests[]{
   munit_void_test(test_util_upcase),
   munit_void_test(test_util_lowcase),
   munit_void_test(test_util_to_numeric_addr),
+  munit_void_test(test_util_fieldeq),
   munit_test_end(),
 };
 } // namespace
@@ -1348,6 +1349,21 @@ void test_util_to_numeric_addr(void) {
                          util::to_numeric_addr(res->ai_addr, res->ai_addrlen));
 
   freeaddrinfo(res);
+}
+
+void test_util_fieldeq(void) {
+  static constexpr auto a = "https://example.com/path"sv;
+  static constexpr auto b = "https://nghttp2.org"sv;
+
+  urlparse_url u1, u2;
+
+  assert_int(0, ==, urlparse_parse_url(a.data(), a.size(), 0, &u1));
+  assert_int(0, ==, urlparse_parse_url(b.data(), b.size(), 0, &u2));
+
+  assert_true(util::fieldeq(a.data(), u1, b.data(), u2, URLPARSE_SCHEMA));
+  assert_true(util::fieldeq(a.data(), u1, b.data(), u2, URLPARSE_PORT));
+  assert_false(util::fieldeq(a.data(), u1, b.data(), u2, URLPARSE_PATH));
+  assert_false(util::fieldeq(a.data(), u1, b.data(), u2, URLPARSE_HOST));
 }
 
 } // namespace shrpx

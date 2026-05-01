@@ -4573,10 +4573,15 @@ std::expected<void, Error> compute_affinity_hash(std::vector<AffinityHash> &res,
                                                  size_t idx,
                                                  std::string_view s) {
   std::array<uint8_t, 32> buf;
+  std::string t;
+
+  t.resize_and_overwrite(s.size() + 1, [s](auto p, auto len) {
+    std::ranges::copy(s, p);
+    return len;
+  });
 
   for (auto i = 0; i < 20; ++i) {
-    auto t = std::string{s};
-    t += static_cast<char>(i);
+    t.back() = static_cast<char>(i);
 
     if (auto rv = util::sha256(buf.data(), t); !rv) {
       return rv;
@@ -4933,10 +4938,7 @@ std::expected<Address, Error> resolve_hostname(const char *hostname,
               << " succeeded: " << host.data();
   }
 
-  Address addr;
-  addr.set(res->ai_addr);
-
-  return addr;
+  return Address{res->ai_addr};
 }
 
 #ifdef ENABLE_HTTP3

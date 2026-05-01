@@ -88,6 +88,7 @@ munit_void_test_decl(test_util_in_attr_char)
 munit_void_test_decl(test_util_upcase)
 munit_void_test_decl(test_util_lowcase)
 munit_void_test_decl(test_util_to_numeric_addr)
+munit_void_test_decl(test_util_fieldeq)
 
 } // namespace shrpx
 

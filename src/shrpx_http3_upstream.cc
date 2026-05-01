@@ -542,15 +542,17 @@ Http3Upstream::send_new_token(const ngtcp2_addr *remote_addr) {
 
   std::array<uint8_t, NGTCP2_CRYPTO_MAX_REGULAR_TOKENLEN + 1> tokenbuf;
 
-  auto token = generate_token(tokenbuf, remote_addr->addr, remote_addr->addrlen,
-                              qkm.secret, qkm.id);
-  if (!token) {
-    return std::unexpected{Error::INTERNAL};
+  auto maybe_token = generate_token(tokenbuf, remote_addr->addr,
+                                    remote_addr->addrlen, qkm.secret, qkm.id);
+  if (!maybe_token) {
+    return std::unexpected{maybe_token.error()};
   }
 
-  assert(token->size() == NGTCP2_CRYPTO_MAX_REGULAR_TOKENLEN + 1);
+  auto token = *maybe_token;
 
-  auto rv = ngtcp2_conn_submit_new_token(conn_, token->data(), token->size());
+  assert(token.size() == NGTCP2_CRYPTO_MAX_REGULAR_TOKENLEN + 1);
+
+  auto rv = ngtcp2_conn_submit_new_token(conn_, token.data(), token.size());
   if (rv != 0) {
     Log{ERROR, this} << "ngtcp2_conn_submit_new_token: " << ngtcp2_strerror(rv);
     return std::unexpected{Error::QUIC};
