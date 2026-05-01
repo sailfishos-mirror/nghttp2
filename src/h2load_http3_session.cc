@@ -48,10 +48,10 @@ Http3Session::~Http3Session() { nghttp3_conn_del(conn_); }
 
 void Http3Session::on_connect() {}
 
-int Http3Session::submit_request() {
+std::expected<void, Error> Http3Session::submit_request() {
   if (npending_request_) {
     ++npending_request_;
-    return 0;
+    return {};
   }
 
   auto config = client_->worker->config;
@@ -61,16 +61,16 @@ int Http3Session::submit_request() {
     client_->reqidx = 0;
   }
 
-  auto stream_id = submit_request_internal();
-  if (stream_id < 0) {
-    if (stream_id == NGTCP2_ERR_STREAM_ID_BLOCKED) {
+  auto rv = submit_request_internal();
+  if (!rv) {
+    if (rv.error() == Error::STREAM_ID_BLOCKED) {
       ++npending_request_;
-      return 0;
+      return {};
     }
-    return -1;
+    return std::unexpected{rv.error()};
   }
 
-  return 0;
+  return {};
 }
 
 namespace {
@@ -96,7 +96,7 @@ void Http3Session::read_data(nghttp3_vec *vec, size_t veccnt,
   *pflags |= NGHTTP3_DATA_FLAG_EOF;
 }
 
-int64_t Http3Session::submit_request_internal() {
+std::expected<void, Error> Http3Session::submit_request_internal() {
   int rv;
   int64_t stream_id;
 
@@ -105,7 +105,11 @@ int64_t Http3Session::submit_request_internal() {
 
   rv = ngtcp2_conn_open_bidi_stream(client_->quic.conn, &stream_id, nullptr);
   if (rv != 0) {
-    return rv;
+    if (rv == NGTCP2_ERR_STREAM_ID_BLOCKED) {
+      return std::unexpected{Error::STREAM_ID_BLOCKED};
+    }
+
+    return std::unexpected{Error::QUIC};
   }
 
   nghttp3_data_reader dr{
@@ -116,7 +120,7 @@ int64_t Http3Session::submit_request_internal() {
     conn_, stream_id, reinterpret_cast<nghttp3_nv *>(nva.data()), nva.size(),
     config->data_fd == -1 ? nullptr : &dr, nullptr);
   if (rv != 0) {
-    return rv;
+    return std::unexpected{Error::HTTP3};
   }
 
   client_->on_request(stream_id);
@@ -124,7 +128,7 @@ int64_t Http3Session::submit_request_internal() {
   assert(req_stat);
   client_->record_request_time(req_stat);
 
-  return stream_id;
+  return {};
 }
 
 int Http3Session::on_read(std::span<const uint8_t> data) { return -1; }
@@ -315,9 +319,9 @@ int Http3Session::extend_max_local_streams() {
   auto config = client_->worker->config;
 
   for (; npending_request_; --npending_request_) {
-    auto stream_id = submit_request_internal();
-    if (stream_id < 0) {
-      if (stream_id == NGTCP2_ERR_STREAM_ID_BLOCKED) {
+    auto rv = submit_request_internal();
+    if (!rv) {
+      if (rv.error() == Error::STREAM_ID_BLOCKED) {
         return 0;
       }
       return -1;

@@ -122,6 +122,8 @@ enum class Error {
   BPF,
   // General configuration error.
   INVALID_CONFIG,
+  // Stream creation is disallowed temporarily due to stream ID limit.
+  STREAM_ID_BLOCKED,
 };
 
 } // namespace nghttp2
@@ -259,6 +261,9 @@ struct std::formatter<nghttp2::Error>
       break;
     case nghttp2::Error::INVALID_CONFIG:
       s = "invalid configuration"sv;
+      break;
+    case nghttp2::Error::STREAM_ID_BLOCKED:
+      s = "Stream creation blocked"sv;
       break;
     }
 

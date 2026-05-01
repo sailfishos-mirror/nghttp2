@@ -253,9 +253,9 @@ void Http2Session::on_connect() {
   client_->signal_write();
 }
 
-int Http2Session::submit_request() {
+std::expected<void, Error> Http2Session::submit_request() {
   if (nghttp2_session_check_request_allowed(session_) == 0) {
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   auto config = client_->worker->config;
@@ -271,12 +271,12 @@ int Http2Session::submit_request() {
     nghttp2_submit_request2(session_, nullptr, nva.data(), nva.size(),
                             config->data_fd == -1 ? nullptr : &prd, nullptr);
   if (stream_id < 0) {
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   client_->on_request(stream_id);
 
-  return 0;
+  return {};
 }
 
 int Http2Session::on_read(std::span<const uint8_t> data) {

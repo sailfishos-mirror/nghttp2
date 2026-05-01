@@ -796,7 +796,7 @@ void Client::disconnect() {
 }
 
 int Client::submit_request() {
-  if (session->submit_request() != 0) {
+  if (!session->submit_request()) {
     return -1;
   }
 

@@ -38,7 +38,7 @@ public:
   Http3Session(Client *client);
   ~Http3Session() override;
   void on_connect() override;
-  int submit_request() override;
+  std::expected<void, Error> submit_request() override;
   int on_read(std::span<const uint8_t> data) override;
   int on_write() override;
   void terminate() override;
@@ -58,7 +58,7 @@ public:
   int close_stream(int64_t stream_id, uint64_t app_error_code);
   int shutdown_stream_read(int64_t stream_id);
   int extend_max_local_streams();
-  int64_t submit_request_internal();
+  std::expected<void, Error> submit_request_internal();
 
   ssize_t read_stream(uint32_t flags, int64_t stream_id,
                       std::span<const uint8_t> data);

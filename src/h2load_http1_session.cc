@@ -169,7 +169,7 @@ Http1Session::~Http1Session() {}
 
 void Http1Session::on_connect() { client_->signal_write(); }
 
-int Http1Session::submit_request() {
+std::expected<void, Error> Http1Session::submit_request() {
   auto config = client_->worker->config;
   const auto &req = config->h1reqs[client_->reqidx];
   client_->reqidx++;
@@ -190,7 +190,11 @@ int Http1Session::submit_request() {
     stream_req_counter_ += 2;
   }
 
-  return on_write();
+  if (on_write() != 0) {
+    return std::unexpected{Error::INTERNAL};
+  }
+
+  return {};
 }
 
 int Http1Session::on_read(std::span<const uint8_t> data) {
