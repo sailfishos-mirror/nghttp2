@@ -40,6 +40,7 @@
 #include <unordered_set>
 #include <chrono>
 #include <memory>
+#include <expected>
 
 #include "ssl_compat.h"
 
@@ -61,6 +62,7 @@
 #include "http2.h"
 #include "nghttp2_gzip.h"
 #include "template.h"
+#include "errors.h"
 
 namespace nghttp2 {
 
@@ -150,7 +152,8 @@ struct Request {
   void init_inflater();
 
   void init_html_parser();
-  int update_html_parser(std::span<const uint8_t> data, int fin);
+  std::expected<void, Error> update_html_parser(std::span<const uint8_t> data,
+                                                int fin);
 
   std::string make_reqpath() const;
 
@@ -223,27 +226,28 @@ struct HttpClient {
   ~HttpClient();
 
   bool need_upgrade() const;
-  int resolve_host(const std::string &host, uint16_t port);
-  int initiate_connection();
+  std::expected<void, Error> resolve_host(const std::string &host,
+                                          uint16_t port);
+  std::expected<void, Error> initiate_connection();
   void disconnect();
 
-  int noop();
-  int read_clear();
-  int write_clear();
-  int connected();
-  int tls_handshake();
-  int read_tls();
-  int write_tls();
+  std::expected<void, Error> noop() { return {}; }
+  std::expected<void, Error> read_clear();
+  std::expected<void, Error> write_clear();
+  std::expected<void, Error> connected();
+  std::expected<void, Error> tls_handshake();
+  std::expected<void, Error> read_tls();
+  std::expected<void, Error> write_tls();
 
-  int do_read();
-  int do_write();
+  std::expected<void, Error> do_read();
+  std::expected<void, Error> do_write();
 
-  int on_upgrade_connect();
-  int on_upgrade_read(std::span<const uint8_t> data);
-  int on_read(std::span<const uint8_t> data);
-  int on_write();
+  std::expected<void, Error> on_upgrade_connect();
+  std::expected<void, Error> on_upgrade_read(std::span<const uint8_t> data);
+  std::expected<void, Error> on_read(std::span<const uint8_t> data);
+  std::expected<void, Error> on_write();
 
-  int connection_made();
+  std::expected<void, Error> connection_made();
   void connect_fail();
   void request_done(Request *req);
 
@@ -280,9 +284,11 @@ struct HttpClient {
   ev_timer wt;
   ev_timer rt;
   ev_timer settings_timer;
-  std::function<int(HttpClient &)> readfn, writefn;
-  std::function<int(HttpClient &, std::span<const uint8_t>)> on_readfn;
-  std::function<int(HttpClient &)> on_writefn;
+  std::function<std::expected<void, Error>(HttpClient &)> readfn, writefn;
+  std::function<std::expected<void, Error>(HttpClient &,
+                                           std::span<const uint8_t>)>
+    on_readfn;
+  std::function<std::expected<void, Error>(HttpClient &)> on_writefn;
   nghttp2_session *session;
   const nghttp2_session_callbacks *callbacks;
   struct ev_loop *loop;
@@ -307,8 +313,6 @@ struct HttpClient {
   bool upgrade_response_complete;
   // SETTINGS payload sent as token68 in HTTP Upgrade
   std::array<uint8_t, 128> settings_payload;
-
-  enum { ERR_CONNECT_FAIL = -100 };
 };
 
 } // namespace nghttp2
