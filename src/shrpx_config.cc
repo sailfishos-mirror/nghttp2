@@ -326,7 +326,7 @@ read_quic_secret_file(std::string_view path) {
 }
 #endif // defined(ENABLE_HTTP3)
 
-FILE *open_file_for_write(const char *filename) {
+std::expected<FILE *, Error> open_file_for_write(const char *filename) {
   std::array<char, STRERROR_BUFSIZE> errbuf;
 
 #ifdef O_CLOEXEC
@@ -344,14 +344,14 @@ FILE *open_file_for_write(const char *filename) {
     auto error = errno;
     Log{ERROR} << "Failed to open " << filename << " for writing. Cause: "
                << xsi_strerror(error, errbuf.data(), errbuf.size());
-    return nullptr;
+    return std::unexpected{Error::SYSCALL};
   }
   auto f = fdopen(fd, "wb");
   if (f == nullptr) {
     auto error = errno;
     Log{ERROR} << "Failed to open " << filename << " for writing. Cause: "
                << xsi_strerror(error, errbuf.data(), errbuf.size());
-    return nullptr;
+    return std::unexpected{Error::LIBC};
   }
 
   return f;
@@ -4569,16 +4569,17 @@ namespace {
 // choose the index, compute 32-bit hash based on client IP address,
 // and do lower bound search in the array. The returned index is the
 // backend to use.
-int compute_affinity_hash(std::vector<AffinityHash> &res, size_t idx,
-                          std::string_view s) {
+std::expected<void, Error> compute_affinity_hash(std::vector<AffinityHash> &res,
+                                                 size_t idx,
+                                                 std::string_view s) {
   std::array<uint8_t, 32> buf;
 
   for (auto i = 0; i < 20; ++i) {
     auto t = std::string{s};
     t += static_cast<char>(i);
 
-    if (!util::sha256(buf.data(), t)) {
-      return -1;
+    if (auto rv = util::sha256(buf.data(), t); !rv) {
+      return rv;
     }
 
     for (size_t i = 0; i < 8; ++i) {
@@ -4591,18 +4592,16 @@ int compute_affinity_hash(std::vector<AffinityHash> &res, size_t idx,
     }
   }
 
-  return 0;
+  return {};
 }
 } // namespace
 
 // Configures the following member in |config|:
 // conn.downstream_router, conn.downstream.addr_groups,
 // conn.downstream.addr_group_catch_all.
-int configure_downstream_group(Config *config, bool http2_proxy,
-                               bool numeric_addr_only,
-                               const TLSConfig &tlsconf) {
-  int rv;
-
+std::expected<void, Error>
+configure_downstream_group(Config *config, bool http2_proxy,
+                           bool numeric_addr_only, const TLSConfig &tlsconf) {
   auto &downstreamconf = *config->conn.downstream;
   auto &addr_groups = downstreamconf.addr_groups;
   auto &routerconf = downstreamconf.router;
@@ -4722,11 +4721,12 @@ int configure_downstream_group(Config *config, bool http2_proxy,
 #ifdef HAVE_MRUBY
     // Try compile mruby script and catch compile error early.
     if (!g.mruby_file.empty()) {
-      if (!mruby::create_mruby_context(g.mruby_file)) {
+      if (auto maybe_mruby = mruby::create_mruby_context(g.mruby_file);
+          !maybe_mruby) {
         Log{config->ignore_per_pattern_mruby_error ? ERROR : FATAL}
           << "backend: Could not compile mruby file for pattern " << g.pattern;
         if (!config->ignore_per_pattern_mruby_error) {
-          return -1;
+          return std::unexpected{maybe_mruby.error()};
         }
         g.mruby_file = ""sv;
       }
@@ -4738,16 +4738,17 @@ int configure_downstream_group(Config *config, bool http2_proxy,
   // Try compile mruby script (--mruby-file) here to catch compile
   // error early.
   if (!config->mruby_file.empty()) {
-    if (!mruby::create_mruby_context(config->mruby_file)) {
+    if (auto maybe_mruby = mruby::create_mruby_context(config->mruby_file);
+        !maybe_mruby) {
       Log{FATAL} << "mruby-file: Could not compile mruby file";
-      return -1;
+      return std::unexpected{maybe_mruby.error()};
     }
   }
 #endif // defined(HAVE_MRUBY)
 
   if (catch_all_group == -1) {
     Log{FATAL} << "backend: No catch-all backend address is configured";
-    return -1;
+    return std::unexpected{Error::INVALID_CONFIG};
   }
 
   downstreamconf.addr_group_catch_all = as_unsigned(catch_all_group);
@@ -4769,7 +4770,7 @@ int configure_downstream_group(Config *config, bool http2_proxy,
           wgchk.emplace(addr.group, addr.group_weight);
         } else if ((*it).second != addr.group_weight) {
           Log{FATAL} << "backend: inconsistent group-weight for a single group";
-          return -1;
+          return std::unexpected{Error::INVALID_CONFIG};
         }
       }
 
@@ -4786,7 +4787,7 @@ int configure_downstream_group(Config *config, bool http2_proxy,
         if (pathlen + 1 > sizeof(unaddr.sun_path)) {
           Log{FATAL} << "UNIX domain socket path " << path << " is too long > "
                      << sizeof(unaddr.sun_path);
-          return -1;
+          return std::unexpected{Error::INVALID_CONFIG};
         }
 
         if (log_enabled(INFO)) {
@@ -4808,11 +4809,14 @@ int configure_downstream_group(Config *config, bool http2_proxy,
                                           std::ranges::begin(hostport_buf));
 
       if (!addr.dns) {
-        if (resolve_hostname(&addr.addr, addr.host.data(), addr.port,
-                             downstreamconf.family, resolve_flags) == -1) {
+        auto maybe_addr = resolve_hostname(
+          addr.host.data(), addr.port, downstreamconf.family, resolve_flags);
+        if (!maybe_addr) {
           Log{FATAL} << "Resolving backend address failed: " << hostport;
-          return -1;
+          return std::unexpected{maybe_addr.error()};
         }
+
+        addr.addr = std::move(*maybe_addr);
 
         if (log_enabled(INFO)) {
           Log{INFO} << "Resolved backend address: " << hostport << " -> "
@@ -4850,9 +4854,8 @@ int configure_downstream_group(Config *config, bool http2_proxy,
             reinterpret_cast<const char *>(addr.addr.as_sockaddr()),
             addr.addr.size()};
         }
-        rv = compute_affinity_hash(g.affinity_hash, idx, key);
-        if (rv != 0) {
-          return -1;
+        if (auto rv = compute_affinity_hash(g.affinity_hash, idx, key); !rv) {
+          return rv;
         }
 
         if (g.affinity.cookie.stickiness ==
@@ -4878,11 +4881,12 @@ int configure_downstream_group(Config *config, bool http2_proxy,
     }
   }
 
-  return 0;
+  return {};
 }
 
-int resolve_hostname(Address *addr, const char *hostname, uint16_t port,
-                     int family, int additional_flags) {
+std::expected<Address, Error> resolve_hostname(const char *hostname,
+                                               uint16_t port, int family,
+                                               int additional_flags) {
   int rv;
 
   auto service = util::utos(port);
@@ -4909,7 +4913,7 @@ int resolve_hostname(Address *addr, const char *hostname, uint16_t port,
   if (rv != 0) {
     Log{FATAL} << "Unable to resolve address for " << hostname << ": "
                << gai_strerror(rv);
-    return -1;
+    return std::unexpected{Error::LIBC};
   }
 
   auto res_d = defer([res] { freeaddrinfo(res); });
@@ -4921,7 +4925,7 @@ int resolve_hostname(Address *addr, const char *hostname, uint16_t port,
     Log{FATAL} << "Address resolution for " << hostname
                << " failed: " << gai_strerror(rv);
 
-    return -1;
+    return std::unexpected{Error::LIBC};
   }
 
   if (log_enabled(INFO)) {
@@ -4929,9 +4933,10 @@ int resolve_hostname(Address *addr, const char *hostname, uint16_t port,
               << " succeeded: " << host.data();
   }
 
-  addr->set(res->ai_addr);
+  Address addr;
+  addr.set(res->ai_addr);
 
-  return 0;
+  return addr;
 }
 
 #ifdef ENABLE_HTTP3

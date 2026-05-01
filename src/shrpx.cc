@@ -3345,15 +3345,15 @@ int process_options(
 
     if (!dumpconf.request_header_file.empty()) {
       auto path = dumpconf.request_header_file.data();
-      auto f = open_file_for_write(path);
 
-      if (f == nullptr) {
+      auto maybe_f = open_file_for_write(path);
+      if (!maybe_f) {
         Log{FATAL} << "Failed to open http2 upstream request header file: "
                    << path;
         return -1;
       }
 
-      dumpconf.request_header = f;
+      dumpconf.request_header = *maybe_f;
 
       if (config->uid != 0) {
         if (chown(path, config->uid, config->gid) == -1) {
@@ -3367,15 +3367,15 @@ int process_options(
 
     if (!dumpconf.response_header_file.empty()) {
       auto path = dumpconf.response_header_file.data();
-      auto f = open_file_for_write(path);
 
-      if (f == nullptr) {
+      auto maybe_f = open_file_for_write(path);
+      if (!maybe_f) {
         Log{FATAL} << "Failed to open http2 upstream response header file: "
                    << path;
         return -1;
       }
 
-      dumpconf.response_header = f;
+      dumpconf.response_header = *maybe_f;
 
       if (config->uid != 0) {
         if (chown(path, config->uid, config->gid) == -1) {
@@ -3438,8 +3438,8 @@ int process_options(
     return -1;
   }
 
-  if (configure_downstream_group(config, config->http2_proxy, false, tlsconf) !=
-      0) {
+  if (!configure_downstream_group(config, config->http2_proxy, false,
+                                  tlsconf)) {
     return -1;
   }
 
@@ -3449,11 +3449,15 @@ int process_options(
   if (!proxy.host.empty()) {
     auto hostport = util::make_hostport(proxy.host, proxy.port,
                                         std::ranges::begin(hostport_buf));
-    if (resolve_hostname(&proxy.addr, proxy.host.data(), proxy.port,
-                         AF_UNSPEC) == -1) {
+    auto maybe_addr =
+      resolve_hostname(proxy.host.data(), proxy.port, AF_UNSPEC);
+    if (!maybe_addr) {
       Log{FATAL} << "Resolving backend HTTP proxy address failed: " << hostport;
       return -1;
     }
+
+    proxy.addr = std::move(*maybe_addr);
+
     Log{NOTICE} << "Backend HTTP proxy address: " << hostport << " -> "
                 << util::to_numeric_addr(&proxy.addr);
   }
@@ -3464,12 +3468,16 @@ int process_options(
       auto hostport =
         util::make_hostport(memcachedconf.host, memcachedconf.port,
                             std::ranges::begin(hostport_buf));
-      if (resolve_hostname(&memcachedconf.addr, memcachedconf.host.data(),
-                           memcachedconf.port, memcachedconf.family) == -1) {
+      auto maybe_addr = resolve_hostname(
+        memcachedconf.host.data(), memcachedconf.port, memcachedconf.family);
+      if (!maybe_addr) {
         Log{FATAL} << "Resolving memcached address for TLS ticket key failed: "
                    << hostport;
         return -1;
       }
+
+      memcachedconf.addr = std::move(*maybe_addr);
+
       Log{NOTICE} << "Memcached address for TLS ticket key: " << hostport
                   << " -> " << util::to_numeric_addr(&memcachedconf.addr);
       if (memcachedconf.tls) {

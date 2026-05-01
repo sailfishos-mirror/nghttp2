@@ -1414,7 +1414,7 @@ std::string_view str_syslog_facility(int facility);
 // Returns integer value of syslog |facility| string.
 std::expected<int, Error> int_syslog_facility(std::string_view strfacility);
 
-FILE *open_file_for_write(const char *filename);
+std::expected<FILE *, Error> open_file_for_write(const char *filename);
 
 // Reads TLS ticket key file in |files| and returns TicketKey which
 // stores read key data.  The given |cipher| and |hmac| determine the
@@ -1432,12 +1432,14 @@ read_quic_secret_file(std::string_view path);
 // Returns string representation of |proto|.
 std::string_view strproto(Proto proto);
 
-int configure_downstream_group(Config *config, bool http2_proxy,
-                               bool numeric_addr_only,
-                               const TLSConfig &tlsconf);
+std::expected<void, Error> configure_downstream_group(Config *config,
+                                                      bool http2_proxy,
+                                                      bool numeric_addr_only,
+                                                      const TLSConfig &tlsconf);
 
-int resolve_hostname(Address *addr, const char *hostname, uint16_t port,
-                     int family, int additional_flags = 0);
+std::expected<Address, Error> resolve_hostname(const char *hostname,
+                                               uint16_t port, int family,
+                                               int additional_flags = 0);
 
 } // namespace shrpx
 
