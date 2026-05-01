@@ -215,11 +215,7 @@ Request::update_html_parser(std::span<const uint8_t> data, int fin) {
     return {};
   }
 
-  if (html_parser->parse_chunk(data, fin) != 0) {
-    return std::unexpected{Error::INTERNAL};
-  }
-
-  return {};
+  return html_parser->parse_chunk(data, fin);
 }
 
 std::string Request::make_reqpath() const {

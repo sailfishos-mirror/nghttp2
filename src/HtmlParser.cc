@@ -175,19 +175,20 @@ xmlSAXHandler saxHandler = {
 };
 } // namespace
 
-int HtmlParser::parse_chunk(std::span<const uint8_t> chunk, int fin) {
+std::expected<void, Error>
+HtmlParser::parse_chunk(std::span<const uint8_t> chunk, int fin) {
   if (!parser_ctx_) {
     parser_ctx_ = htmlCreatePushParserCtxt(
       &saxHandler, &parser_data_, reinterpret_cast<const char *>(chunk.data()),
       static_cast<int>(chunk.size()), base_uri_.c_str(),
       XML_CHAR_ENCODING_NONE);
     if (!parser_ctx_) {
-      return -1;
+      return std::unexpected{Error::INTERNAL};
     } else {
       if (fin) {
         return parse_chunk_internal({}, fin);
       } else {
-        return 0;
+        return {};
       }
     }
   } else {
@@ -195,15 +196,16 @@ int HtmlParser::parse_chunk(std::span<const uint8_t> chunk, int fin) {
   }
 }
 
-int HtmlParser::parse_chunk_internal(std::span<const uint8_t> chunk, int fin) {
+std::expected<void, Error>
+HtmlParser::parse_chunk_internal(std::span<const uint8_t> chunk, int fin) {
   int rv =
     htmlParseChunk(parser_ctx_, reinterpret_cast<const char *>(chunk.data()),
                    static_cast<int>(chunk.size()), fin);
-  if (rv == 0) {
-    return 0;
-  } else {
-    return -1;
+  if (rv != 0) {
+    return std::unexpected{Error::INTERNAL};
   }
+
+  return {};
 }
 
 const std::vector<std::pair<std::string, ResourceType>> &
