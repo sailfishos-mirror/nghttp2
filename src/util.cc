@@ -742,20 +742,17 @@ bool has_uri_field(const urlparse_url &u, urlparse_url_fields field) {
 
 bool fieldeq(const char *uri1, const urlparse_url &u1, const char *uri2,
              const urlparse_url &u2, urlparse_url_fields field) {
-  if (!has_uri_field(u1, field)) {
-    if (!has_uri_field(u2, field)) {
-      return true;
-    } else {
-      return false;
-    }
-  } else if (!has_uri_field(u2, field)) {
-    return false;
+  auto e1 = has_uri_field(u1, field);
+  auto e2 = has_uri_field(u2, field);
+
+  if (!e1) {
+    return !e2;
   }
-  if (u1.field_data[field].len != u2.field_data[field].len) {
-    return false;
-  }
-  return memcmp(uri1 + u1.field_data[field].off,
-                uri2 + u2.field_data[field].off, u1.field_data[field].len) == 0;
+
+  return e2 && std::string_view{uri1 + u1.field_data[field].off,
+                                u1.field_data[field].len} ==
+                 std::string_view{uri2 + u2.field_data[field].off,
+                                  u2.field_data[field].len};
 }
 
 bool fieldeq(const char *uri, const urlparse_url &u, urlparse_url_fields field,
@@ -783,22 +780,22 @@ std::string_view get_uri_field(const char *uri, const urlparse_url &u,
 }
 
 uint16_t get_default_port(const char *uri, const urlparse_url &u) {
-  if (util::fieldeq(uri, u, URLPARSE_SCHEMA, "https")) {
-    return 443;
-  } else if (util::fieldeq(uri, u, URLPARSE_SCHEMA, "http")) {
+  if (util::fieldeq(uri, u, URLPARSE_SCHEMA, "http")) {
     return 80;
-  } else {
-    return 443;
   }
+
+  return 443;
 }
 
 bool porteq(const char *uri1, const urlparse_url &u1, const char *uri2,
             const urlparse_url &u2) {
-  uint16_t port1, port2;
-  port1 = util::has_uri_field(u1, URLPARSE_PORT) ? u1.port
-                                                 : get_default_port(uri1, u1);
-  port2 = util::has_uri_field(u2, URLPARSE_PORT) ? u2.port
-                                                 : get_default_port(uri2, u2);
+  auto port1 = util::has_uri_field(u1, URLPARSE_PORT)
+                 ? u1.port
+                 : get_default_port(uri1, u1);
+  auto port2 = util::has_uri_field(u2, URLPARSE_PORT)
+                 ? u2.port
+                 : get_default_port(uri2, u2);
+
   return port1 == port2;
 }
 
@@ -807,12 +804,9 @@ bool numeric_host(const char *hostname) {
 }
 
 bool numeric_host(const char *hostname, int family) {
-  int rv;
   std::array<uint8_t, sizeof(struct in6_addr)> dst;
 
-  rv = nghttp2_inet_pton(family, hostname, dst.data());
-
-  return rv == 1;
+  return 1 == nghttp2_inet_pton(family, hostname, dst.data());
 }
 
 std::string numeric_name(const struct sockaddr *sa, socklen_t salen) {
