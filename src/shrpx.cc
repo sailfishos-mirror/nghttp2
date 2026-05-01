@@ -895,7 +895,13 @@ std::expected<pid_t, Error> get_orig_pid_from_env() {
   if (s == nullptr) {
     return std::unexpected{Error::ENTITY_NOT_FOUND};
   }
-  return static_cast<pid_t>(util::parse_uint(s).value_or(-1));
+
+  auto maybe_n = util::parse_uint(s);
+  if (!maybe_n) {
+    return std::unexpected{maybe_n.error()};
+  }
+
+  return static_cast<pid_t>(*maybe_n);
 }
 } // namespace
 
