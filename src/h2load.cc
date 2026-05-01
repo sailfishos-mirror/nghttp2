@@ -218,8 +218,7 @@ void writecb(struct ev_loop *loop, ev_io *w, int revents) {
     client->disconnect();
     // Try next address
     client->current_addr = nullptr;
-    rv = client->connect();
-    if (rv != 0) {
+    if (!client->connect()) {
       client->fail();
       client->worker->free_client(client);
       delete client;
@@ -270,7 +269,7 @@ void rate_period_timeout_w_cb(struct ev_loop *loop, ev_timer *w, int revents) {
 
     ++worker->nconns_made;
 
-    if (client->connect() != 0) {
+    if (!client->connect()) {
       std::cerr << "client could not connect to host" << std::endl;
       client->fail();
     } else {
@@ -636,7 +635,7 @@ std::expected<void, Error> Client::make_socket(addrinfo *addr) {
   return {};
 }
 
-int Client::connect() {
+std::expected<void, Error> Client::connect() {
   if (!worker->config->is_timing_based_mode() ||
       worker->current_phase == Phase::MAIN_DURATION) {
     record_client_start_time();
@@ -654,8 +653,8 @@ int Client::connect() {
   }
 
   if (current_addr) {
-    if (!make_socket(current_addr)) {
-      return -1;
+    if (auto rv = make_socket(current_addr); !rv) {
+      return rv;
     }
   } else {
     addrinfo *addr = nullptr;
@@ -668,7 +667,7 @@ int Client::connect() {
     }
 
     if (fd == -1) {
-      return -1;
+      return std::unexpected{Error::SYSCALL};
     }
 
     assert(addr);
@@ -692,7 +691,7 @@ int Client::connect() {
     writefn = &Client::connected;
   }
 
-  return 0;
+  return {};
 }
 
 void Client::timeout() {
@@ -728,7 +727,7 @@ int Client::try_again_or_fail() {
       }
 
       // Keep using current address
-      if (connect() == 0) {
+      if (connect()) {
         return 0;
       }
       std::cerr << "client could not connect to host" << std::endl;
@@ -1860,7 +1859,7 @@ void Worker::run() {
       }
 
       auto client = std::make_unique<Client>(next_client_id++, this, req_todo);
-      if (client->connect() != 0) {
+      if (!client->connect()) {
         std::cerr << "client could not connect to host" << std::endl;
         client->fail();
       } else {

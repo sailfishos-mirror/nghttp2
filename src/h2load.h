@@ -474,7 +474,7 @@ struct Client {
   Client(uint32_t id, Worker *worker, size_t req_todo);
   ~Client();
   std::expected<void, Error> make_socket(addrinfo *addr);
-  int connect();
+  std::expected<void, Error> connect();
   void disconnect();
   void fail();
   // Call this function when do_read() returns -1.  This function
