@@ -473,7 +473,7 @@ struct Client {
 
   Client(uint32_t id, Worker *worker, size_t req_todo);
   ~Client();
-  int make_socket(addrinfo *addr);
+  std::expected<void, Error> make_socket(addrinfo *addr);
   int connect();
   void disconnect();
   void fail();

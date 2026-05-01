@@ -545,14 +545,14 @@ Client::~Client() {
 int Client::do_read() { return readfn(*this); }
 int Client::do_write() { return writefn(*this); }
 
-int Client::make_socket(addrinfo *addr) {
+std::expected<void, Error> Client::make_socket(addrinfo *addr) {
   int rv;
 
   if (config.is_quic()) {
 #ifdef ENABLE_HTTP3
     auto maybe_fd = util::create_nonblock_udp_socket(addr->ai_family);
     if (!maybe_fd) {
-      return -1;
+      return std::unexpected{maybe_fd.error()};
     }
 
     fd = *maybe_fd;
@@ -561,21 +561,21 @@ int Client::make_socket(addrinfo *addr) {
     int val = 1;
     if (setsockopt(fd, IPPROTO_UDP, UDP_GRO, &val, sizeof(val)) != 0) {
       std::cerr << "setsockopt UDP_GRO failed" << std::endl;
-      return -1;
+      return std::unexpected{Error::SYSCALL};
     }
 #  endif // defined(UDP_GRO)
 
-    if (!util::bind_any_addr_udp(fd, addr->ai_family)) {
+    if (auto rv = util::bind_any_addr_udp(fd, addr->ai_family); !rv) {
       close(fd);
       fd = -1;
-      return -1;
+      return std::unexpected{rv.error()};
     }
 
     sockaddr_storage ss;
     socklen_t addrlen = sizeof(ss);
     rv = getsockname(fd, reinterpret_cast<sockaddr *>(&ss), &addrlen);
     if (rv == -1) {
-      return -1;
+      return std::unexpected{Error::SYSCALL};
     }
 
     local_addr.set(reinterpret_cast<const sockaddr *>(&ss));
@@ -583,13 +583,13 @@ int Client::make_socket(addrinfo *addr) {
     if (quic_init(local_addr.as_sockaddr(), local_addr.size(), addr->ai_addr,
                   addr->ai_addrlen) != 0) {
       std::cerr << "quic_init failed" << std::endl;
-      return -1;
+      return std::unexpected{Error::INTERNAL};
     }
 #endif // defined(ENABLE_HTTP3)
   } else {
     auto maybe_fd = util::create_nonblock_socket(addr->ai_family);
     if (!maybe_fd) {
-      return -1;
+      return std::unexpected{maybe_fd.error()};
     }
 
     fd = *maybe_fd;
@@ -620,7 +620,7 @@ int Client::make_socket(addrinfo *addr) {
   }
 
   if (config.is_quic()) {
-    return 0;
+    return {};
   }
 
   rv = ::connect(fd, addr->ai_addr, addr->ai_addrlen);
@@ -631,14 +631,12 @@ int Client::make_socket(addrinfo *addr) {
     }
     close(fd);
     fd = -1;
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
-  return 0;
+  return {};
 }
 
 int Client::connect() {
-  int rv;
-
   if (!worker->config->is_timing_based_mode() ||
       worker->current_phase == Phase::MAIN_DURATION) {
     record_client_start_time();
@@ -656,8 +654,7 @@ int Client::connect() {
   }
 
   if (current_addr) {
-    rv = make_socket(current_addr);
-    if (rv == -1) {
+    if (!make_socket(current_addr)) {
       return -1;
     }
   } else {
@@ -665,8 +662,7 @@ int Client::connect() {
     while (next_addr) {
       addr = next_addr;
       next_addr = next_addr->ai_next;
-      rv = make_socket(addr);
-      if (rv == 0) {
+      if (make_socket(addr)) {
         break;
       }
     }
