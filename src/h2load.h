@@ -552,7 +552,7 @@ struct Client {
                             std::span<const uint8_t> data, size_t gso_size);
   void on_send_blocked(const ngtcp2_addr &remote_addr,
                        std::span<const uint8_t> data, size_t gso_size);
-  int send_blocked_packet();
+  void send_blocked_packet();
   void quic_close_connection();
 
   int quic_handshake_completed();

@@ -745,8 +745,6 @@ ngtcp2_ssize Client::write_quic_pkt(ngtcp2_path *path, ngtcp2_pkt_info *pi,
 }
 
 std::expected<void, Error> Client::write_quic() {
-  int rv;
-
   ev_io_stop(worker->loop, &wev);
 
   if (quic.close_requested) {
@@ -754,10 +752,7 @@ std::expected<void, Error> Client::write_quic() {
   }
 
   if (quic.tx.send_blocked) {
-    rv = send_blocked_packet();
-    if (rv != 0) {
-      return std::unexpected{Error::INTERNAL};
-    }
+    send_blocked_packet();
 
     if (quic.tx.send_blocked) {
       return {};
@@ -813,7 +808,7 @@ void Client::on_send_blocked(const ngtcp2_addr &remote_addr,
   signal_write();
 }
 
-int Client::send_blocked_packet() {
+void Client::send_blocked_packet() {
   assert(quic.tx.send_blocked);
 
   auto &p = quic.tx.blocked;
@@ -825,12 +820,10 @@ int Client::send_blocked_packet() {
 
     signal_write();
 
-    return 0;
+    return;
   }
 
   quic.tx.send_blocked = false;
-
-  return 0;
 }
 
 } // namespace h2load
