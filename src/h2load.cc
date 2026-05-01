@@ -239,7 +239,7 @@ void readcb(struct ev_loop *loop, ev_io *w, int revents) {
   auto client = static_cast<Client *>(w->data);
   client->restart_timeout();
   if (client->do_read() != 0) {
-    if (client->try_again_or_fail() == 0) {
+    if (client->try_again_or_fail()) {
       return;
     }
     client->worker->free_client(client);
@@ -706,7 +706,7 @@ void Client::restart_timeout() {
   }
 }
 
-int Client::try_again_or_fail() {
+std::expected<void, Error> Client::try_again_or_fail() {
   disconnect();
 
   if (new_connection_requested) {
@@ -723,12 +723,12 @@ int Client::try_again_or_fail() {
       } else if (worker->current_phase == Phase::DURATION_OVER) {
         // fix a race condition when h2load is sending connection: close over h1
         // prevents new clients from spawning after the test should have ended.
-        return -1;
+        return std::unexpected{Error::INTERNAL};
       }
 
       // Keep using current address
       if (connect()) {
-        return 0;
+        return {};
       }
       std::cerr << "client could not connect to host" << std::endl;
     }
@@ -736,7 +736,7 @@ int Client::try_again_or_fail() {
 
   process_abandoned_streams();
 
-  return -1;
+  return std::unexpected{Error::INTERNAL};
 }
 
 void Client::fail() {

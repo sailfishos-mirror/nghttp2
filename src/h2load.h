@@ -479,10 +479,10 @@ struct Client {
   void fail();
   // Call this function when do_read() returns -1.  This function
   // tries to connect to the remote host again if it is requested.  If
-  // so, this function returns 0, and this object should be retained.
-  // Otherwise, this function returns -1, and this object should be
+  // so, this function succeeds, and this object should be retained.
+  // Otherwise, this function returns error, and this object should be
   // deleted.
-  int try_again_or_fail();
+  std::expected<void, Error> try_again_or_fail();
   void timeout();
   void restart_timeout();
   int submit_request();
