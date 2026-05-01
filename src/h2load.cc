@@ -579,10 +579,11 @@ std::expected<void, Error> Client::make_socket(addrinfo *addr) {
 
     local_addr.set(reinterpret_cast<const sockaddr *>(&ss));
 
-    if (quic_init(local_addr.as_sockaddr(), local_addr.size(), addr->ai_addr,
-                  addr->ai_addrlen) != 0) {
+    if (auto rv = quic_init(local_addr.as_sockaddr(), local_addr.size(),
+                            addr->ai_addr, addr->ai_addrlen);
+        !rv) {
       std::cerr << "quic_init failed" << std::endl;
-      return std::unexpected{Error::INTERNAL};
+      return rv;
     }
 #endif // defined(ENABLE_HTTP3)
   } else {

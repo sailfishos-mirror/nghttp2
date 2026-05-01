@@ -260,15 +260,17 @@ void debug_log_printf(void *user_data, const char *fmt, ...) {
 } // namespace
 
 namespace {
-int generate_cid(ngtcp2_cid &dest) {
+std::expected<ngtcp2_cid, Error> generate_cid() {
+  ngtcp2_cid dest;
+
   dest.datalen = 8;
 
   if (RAND_bytes(dest.data, static_cast<nghttp2_ssl_rand_length_type>(
                               dest.datalen)) != 1) {
-    return -1;
+    return std::unexpected{Error::CRYPTO};
   }
 
-  return 0;
+  return dest;
 }
 } // namespace
 
@@ -340,8 +342,10 @@ ngtcp2_conn *get_conn(ngtcp2_crypto_conn_ref *conn_ref) {
 }
 } // namespace
 
-int Client::quic_init(const sockaddr *local_addr, socklen_t local_addrlen,
-                      const sockaddr *remote_addr, socklen_t remote_addrlen) {
+std::expected<void, Error> Client::quic_init(const sockaddr *local_addr,
+                                             socklen_t local_addrlen,
+                                             const sockaddr *remote_addr,
+                                             socklen_t remote_addrlen) {
   int rv;
 
   auto config = worker->config;
@@ -358,14 +362,14 @@ int Client::quic_init(const sockaddr *local_addr, socklen_t local_addrlen,
     if (ngtcp2_crypto_ossl_configure_client_session(ssl) != 0) {
       std::cerr << "ngtcp2_crypto_ossl_configure_client_session failed"
                 << std::endl;
-      return -1;
+      return std::unexpected{Error::QUIC};
     }
 
     rv = ngtcp2_crypto_ossl_ctx_new(&quic.ossl_ctx, ssl);
     if (rv != 0) {
       std::cerr << "ngtcp2_crypto_ossl_ctx_new failed with error code " << rv
                 << std::endl;
-      return -1;
+      return std::unexpected{Error::QUIC};
     }
 #else  // !OPENSSL_3_5_0_API
     SSL_set_quic_use_legacy_codepoint(ssl, 0);
@@ -404,12 +408,13 @@ int Client::quic_init(const sockaddr *local_addr, socklen_t local_addrlen,
     .recv_rx_key = h2load::recv_rx_key,
   };
 
-  ngtcp2_cid scid, dcid;
-  if (generate_cid(scid) != 0) {
-    return -1;
+  auto maybe_scid = generate_cid();
+  if (!maybe_scid) {
+    return std::unexpected{maybe_scid.error()};
   }
-  if (generate_cid(dcid) != 0) {
-    return -1;
+  auto maybe_dcid = generate_cid();
+  if (!maybe_dcid) {
+    return std::unexpected{maybe_dcid.error()};
   }
 
   ngtcp2_settings settings;
@@ -430,7 +435,7 @@ int Client::quic_init(const sockaddr *local_addr, socklen_t local_addrlen,
     quic.qlog_file = fopen(path.c_str(), "w");
     if (quic.qlog_file == nullptr) {
       std::cerr << "Failed to open a qlog file: " << path << std::endl;
-      return -1;
+      return std::unexpected{Error::LIBC};
     }
     settings.qlog_write = qlog_write_cb;
   }
@@ -471,10 +476,11 @@ int Client::quic_init(const sockaddr *local_addr, socklen_t local_addrlen,
     quic_version = NGTCP2_PROTO_VER_MIN;
   }
 
-  rv = ngtcp2_conn_client_new(&quic.conn, &dcid, &scid, &path, quic_version,
-                              &callbacks, &settings, &params, nullptr, this);
+  rv = ngtcp2_conn_client_new(&quic.conn, &*maybe_dcid, &*maybe_scid, &path,
+                              quic_version, &callbacks, &settings, &params,
+                              nullptr, this);
   if (rv != 0) {
-    return -1;
+    return std::unexpected{Error::QUIC};
   }
 
 #if OPENSSL_3_5_0_API
@@ -483,7 +489,7 @@ int Client::quic_init(const sockaddr *local_addr, socklen_t local_addrlen,
   ngtcp2_conn_set_tls_native_handle(quic.conn, ssl);
 #endif // !OPENSSL_3_5_0_API
 
-  return 0;
+  return {};
 }
 
 void Client::quic_free() {

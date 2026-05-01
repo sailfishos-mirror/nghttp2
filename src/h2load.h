@@ -536,8 +536,10 @@ struct Client {
 
 #ifdef ENABLE_HTTP3
   // QUIC
-  int quic_init(const sockaddr *local_addr, socklen_t local_addrlen,
-                const sockaddr *remote_addr, socklen_t remote_addrlen);
+  std::expected<void, Error> quic_init(const sockaddr *local_addr,
+                                       socklen_t local_addrlen,
+                                       const sockaddr *remote_addr,
+                                       socklen_t remote_addrlen);
   void quic_free();
   std::expected<void, Error> read_quic();
   std::expected<void, Error> write_quic();
