@@ -1083,7 +1083,7 @@ void Client::report_app_info() {
   }
 }
 
-int Client::terminate_session() {
+std::expected<void, Error> Client::terminate_session() {
 #ifdef ENABLE_HTTP3
   if (config.is_quic()) {
     quic.close_requested = true;
@@ -1092,13 +1092,13 @@ int Client::terminate_session() {
   if (session) {
     session->terminate();
   } else {
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
 
   // http1 session needs writecb to tear down session.
   signal_write();
 
-  return 0;
+  return {};
 }
 
 void Client::on_request(int64_t stream_id) { streams[stream_id] = Stream(); }
@@ -1823,7 +1823,7 @@ Worker::~Worker() {
 void Worker::stop_all_clients() {
   for (auto [_, client] : clients) {
     if (client) {
-      if (client->terminate_session() != 0) {
+      if (!client->terminate_session()) {
         client->fail();
         free_client(client);
         delete client;

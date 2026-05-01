@@ -491,7 +491,7 @@ struct Client {
   void process_abandoned_streams();
   void report_tls_info();
   void report_app_info();
-  int terminate_session();
+  std::expected<void, Error> terminate_session();
   // Asks client to create new connection, instead of just fail.
   void try_new_connection();
   uint32_t get_id() const;
