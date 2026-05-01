@@ -64,7 +64,7 @@ int handshake_completed(ngtcp2_conn *conn, void *user_data) {
 }
 } // namespace
 
-int Client::quic_handshake_completed() { return connection_made(); }
+int Client::quic_handshake_completed() { return connection_made() ? 0 : -1; }
 
 namespace {
 int recv_stream_data(ngtcp2_conn *conn, uint32_t flags, int64_t stream_id,
@@ -567,7 +567,7 @@ void Client::quic_restart_pkt_timer() {
   ev_timer_again(worker->loop, &quic.pkt_timer);
 }
 
-int Client::read_quic() {
+std::expected<void, Error> Client::read_quic() {
   std::array<uint8_t, 64_k> buf;
   sockaddr_storage ss;
   int rv;
@@ -596,7 +596,7 @@ int Client::read_quic() {
 
     auto nread = recvmsg(fd, &msg, 0);
     if (nread == -1) {
-      return 0;
+      return {};
     }
 
     auto gso_size = util::msghdr_get_udp_gro(&msg);
@@ -646,7 +646,7 @@ int Client::read_quic() {
           }
         }
 
-        return -1;
+        return std::unexpected{Error::QUIC};
       }
 
       nread -= datalen;
@@ -662,7 +662,7 @@ int Client::read_quic() {
     }
   }
 
-  return 0;
+  return {};
 }
 
 namespace {
@@ -738,23 +738,23 @@ ngtcp2_ssize Client::write_quic_pkt(ngtcp2_path *path, ngtcp2_pkt_info *pi,
   }
 }
 
-int Client::write_quic() {
+std::expected<void, Error> Client::write_quic() {
   int rv;
 
   ev_io_stop(worker->loop, &wev);
 
   if (quic.close_requested) {
-    return -1;
+    return std::unexpected{Error::DONE};
   }
 
   if (quic.tx.send_blocked) {
     rv = send_blocked_packet();
     if (rv != 0) {
-      return -1;
+      return std::unexpected{Error::INTERNAL};
     }
 
     if (quic.tx.send_blocked) {
-      return 0;
+      return {};
     }
   }
 
@@ -768,19 +768,19 @@ int Client::write_quic() {
     quic.conn, &ps.path, nullptr, txbuf.data(), txbuf.size(), &gso_size,
     h2load::write_pkt, quic_timestamp());
   if (nwrite < 0) {
-    return -1;
+    return std::unexpected{Error::QUIC};
   }
 
   quic_restart_pkt_timer();
 
   if (nwrite == 0) {
-    return 0;
+    return {};
   }
 
   write_udp_or_blocked(ps.path, txbuf.first(static_cast<size_t>(nwrite)),
                        gso_size);
 
-  return 0;
+  return {};
 }
 
 void Client::write_udp_or_blocked(const ngtcp2_path &path,

@@ -213,20 +213,20 @@ namespace {
 void writecb(struct ev_loop *loop, ev_io *w, int revents) {
   auto client = static_cast<Client *>(w->data);
   client->restart_timeout();
-  auto rv = client->do_write();
-  if (rv == Client::ERR_CONNECT_FAIL) {
-    client->disconnect();
-    // Try next address
-    client->current_addr = nullptr;
-    if (!client->connect()) {
-      client->fail();
-      client->worker->free_client(client);
-      delete client;
+  if (auto rv = client->do_write(); !rv) {
+    if (rv.error() == Error::CONNECT_FAIL) {
+      client->disconnect();
+      // Try next address
+      client->current_addr = nullptr;
+      if (!client->connect()) {
+        client->fail();
+        client->worker->free_client(client);
+        delete client;
+        return;
+      }
       return;
     }
-    return;
-  }
-  if (rv != 0) {
+
     client->fail();
     client->worker->free_client(client);
     delete client;
@@ -238,7 +238,7 @@ namespace {
 void readcb(struct ev_loop *loop, ev_io *w, int revents) {
   auto client = static_cast<Client *>(w->data);
   client->restart_timeout();
-  if (client->do_read() != 0) {
+  if (!client->do_read()) {
     if (client->try_again_or_fail()) {
       return;
     }
@@ -541,8 +541,8 @@ Client::~Client() {
   ++worker->client_smp.n;
 }
 
-int Client::do_read() { return readfn(*this); }
-int Client::do_write() { return writefn(*this); }
+std::expected<void, Error> Client::do_read() { return readfn(*this); }
+std::expected<void, Error> Client::do_write() { return writefn(*this); }
 
 std::expected<void, Error> Client::make_socket(addrinfo *addr) {
   int rv;
@@ -1281,7 +1281,7 @@ RequestStat *Client::get_req_stat(int64_t stream_id) {
   return &(*it).second.req_stat;
 }
 
-int Client::connection_made() {
+std::expected<void, Error> Client::connection_made() {
   if (ssl) {
     report_tls_info();
 
@@ -1296,7 +1296,7 @@ int Client::connection_made() {
 #ifdef ENABLE_HTTP3
         assert(session);
         if ("h3"sv != proto && "h3-29"sv != proto) {
-          return -1;
+          return std::unexpected{Error::ALPN};
         }
 #endif // defined(ENABLE_HTTP3)
       } else if (util::check_h2_is_selected(proto)) {
@@ -1310,7 +1310,7 @@ int Client::connection_made() {
       selected_proto = proto;
     } else if (config.is_quic()) {
       std::cerr << "QUIC requires ALPN negotiation" << std::endl;
-      return -1;
+      return std::unexpected{Error::ALPN};
     } else {
       std::cout << "No protocol negotiated. Fallback behaviour may be activated"
                 << std::endl;
@@ -1338,7 +1338,7 @@ int Client::connection_made() {
         std::cout << proto.substr(1) << std::endl;
       }
       disconnect();
-      return -1;
+      return std::unexpected{Error::ALPN};
     }
   } else {
     switch (config.no_tls_proto) {
@@ -1414,33 +1414,30 @@ int Client::connection_made() {
   }
   signal_write();
 
-  return 0;
+  return {};
 }
 
-int Client::on_read(std::span<const uint8_t> data) {
+std::expected<void, Error> Client::on_read(std::span<const uint8_t> data) {
   auto rv = session->on_read(data);
   if (worker->current_phase == Phase::MAIN_DURATION) {
     worker->stats.bytes_total += data.size();
   }
   if (!rv) {
-    return -1;
+    return rv;
   }
   signal_write();
-  return 0;
+  return {};
 }
 
-int Client::on_write() {
+std::expected<void, Error> Client::on_write() {
   if (wb.rleft() >= BACKOFF_WRITE_BUFFER_THRES) {
-    return 0;
+    return {};
   }
 
-  if (!session->on_write()) {
-    return -1;
-  }
-  return 0;
+  return session->on_write();
 }
 
-int Client::read_clear() {
+std::expected<void, Error> Client::read_clear() {
   std::array<uint8_t, 8_k> rawbuf;
   auto buf = std::span<uint8_t>{rawbuf};
 
@@ -1450,29 +1447,29 @@ int Client::read_clear() {
       ;
     if (nread == -1) {
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        return 0;
+        return {};
       }
-      return -1;
+      return std::unexpected{Error::SYSCALL};
     }
 
     if (nread == 0) {
-      return -1;
+      return std::unexpected{Error::RECV_EOF};
     }
 
-    if (on_read(buf.first(as_unsigned(nread))) != 0) {
-      return -1;
+    if (auto rv = on_read(buf.first(as_unsigned(nread))); !rv) {
+      return rv;
     }
   }
 
-  return 0;
+  return {};
 }
 
-int Client::write_clear() {
+std::expected<void, Error> Client::write_clear() {
   std::array<struct iovec, 2> iovbuf;
 
   for (;;) {
-    if (on_write() != 0) {
-      return -1;
+    if (auto rv = on_write(); !rv) {
+      return rv;
     }
 
     auto iov = wb.riovec(iovbuf);
@@ -1490,9 +1487,9 @@ int Client::write_clear() {
     if (nwrite == -1) {
       if (errno == EAGAIN || errno == EWOULDBLOCK) {
         ev_io_start(worker->loop, &wev);
-        return 0;
+        return {};
       }
-      return -1;
+      return std::unexpected{Error::SYSCALL};
     }
 
     wb.drain(as_unsigned(nwrite));
@@ -1500,12 +1497,12 @@ int Client::write_clear() {
 
   ev_io_stop(worker->loop, &wev);
 
-  return 0;
+  return {};
 }
 
-int Client::connected() {
+std::expected<void, Error> Client::connected() {
   if (!util::check_socket_connected(fd)) {
-    return ERR_CONNECT_FAIL;
+    return std::unexpected{Error::CONNECT_FAIL};
   }
   ev_io_start(worker->loop, &rev);
   ev_io_stop(worker->loop, &wev);
@@ -1522,14 +1519,10 @@ int Client::connected() {
   readfn = &Client::read_clear;
   writefn = &Client::write_clear;
 
-  if (connection_made() != 0) {
-    return -1;
-  }
-
-  return 0;
+  return connection_made();
 }
 
-int Client::tls_handshake() {
+std::expected<void, Error> Client::tls_handshake() {
   ERR_clear_error();
 
   auto rv = SSL_do_handshake(ssl);
@@ -1539,12 +1532,12 @@ int Client::tls_handshake() {
     switch (err) {
     case SSL_ERROR_WANT_READ:
       ev_io_stop(worker->loop, &wev);
-      return 0;
+      return {};
     case SSL_ERROR_WANT_WRITE:
       ev_io_start(worker->loop, &wev);
-      return 0;
+      return {};
     default:
-      return -1;
+      return std::unexpected{Error::CRYPTO};
     }
   }
 
@@ -1553,14 +1546,10 @@ int Client::tls_handshake() {
   readfn = &Client::read_tls;
   writefn = &Client::write_tls;
 
-  if (connection_made() != 0) {
-    return -1;
-  }
-
-  return 0;
+  return connection_made();
 }
 
-int Client::read_tls() {
+std::expected<void, Error> Client::read_tls() {
   std::array<uint8_t, 8_k> rawbuf;
 
   ERR_clear_error();
@@ -1568,33 +1557,32 @@ int Client::read_tls() {
   auto buf = std::span<uint8_t>{rawbuf};
 
   for (;;) {
-    auto rv = SSL_read(ssl, buf.data(), static_cast<int>(buf.size()));
+    auto nread = SSL_read(ssl, buf.data(), static_cast<int>(buf.size()));
 
-    if (rv <= 0) {
-      auto err = SSL_get_error(ssl, rv);
+    if (nread <= 0) {
+      auto err = SSL_get_error(ssl, nread);
       switch (err) {
       case SSL_ERROR_WANT_READ:
-        return 0;
+        return {};
       case SSL_ERROR_WANT_WRITE:
         // renegotiation started
-        return -1;
       default:
-        return -1;
+        return std::unexpected{Error::CRYPTO};
       }
     }
 
-    if (on_read(buf.first(static_cast<size_t>(rv))) != 0) {
-      return -1;
+    if (auto rv = on_read(buf.first(static_cast<size_t>(nread))); !rv) {
+      return rv;
     }
   }
 }
 
-int Client::write_tls() {
+std::expected<void, Error> Client::write_tls() {
   ERR_clear_error();
 
   for (;;) {
-    if (on_write() != 0) {
-      return -1;
+    if (auto rv = on_write(); !rv) {
+      return rv;
     }
 
     auto data = wb.peek();
@@ -1603,28 +1591,27 @@ int Client::write_tls() {
       break;
     }
 
-    auto rv = SSL_write(ssl, data.data(), static_cast<int>(data.size()));
+    auto nwrite = SSL_write(ssl, data.data(), static_cast<int>(data.size()));
 
-    if (rv <= 0) {
-      auto err = SSL_get_error(ssl, rv);
+    if (nwrite <= 0) {
+      auto err = SSL_get_error(ssl, nwrite);
       switch (err) {
-      case SSL_ERROR_WANT_READ:
-        // renegotiation started
-        return -1;
       case SSL_ERROR_WANT_WRITE:
         ev_io_start(worker->loop, &wev);
-        return 0;
+        return {};
+      case SSL_ERROR_WANT_READ:
+        // renegotiation started
       default:
-        return -1;
+        return std::unexpected{Error::CRYPTO};
       }
     }
 
-    wb.drain(static_cast<size_t>(rv));
+    wb.drain(static_cast<size_t>(nwrite));
   }
 
   ev_io_stop(worker->loop, &wev);
 
-  return 0;
+  return {};
 }
 
 #ifdef ENABLE_HTTP3

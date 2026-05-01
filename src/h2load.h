@@ -396,7 +396,7 @@ struct Client {
   std::unique_ptr<Session> session;
   ev_io wev;
   ev_io rev;
-  std::function<int(Client &)> readfn, writefn;
+  std::function<std::expected<void, Error>(Client &)> readfn, writefn;
   Worker *worker;
   SSL *ssl;
 #ifdef ENABLE_HTTP3
@@ -469,8 +469,6 @@ struct Client {
   // and it is only used if --rps is given.
   size_t rps_req_inflight;
 
-  enum { ERR_CONNECT_FAIL = -100 };
-
   Client(uint32_t id, Worker *worker, size_t req_todo);
   ~Client();
   std::expected<void, Error> make_socket(addrinfo *addr);
@@ -496,21 +494,21 @@ struct Client {
   void try_new_connection();
   uint32_t get_id() const;
 
-  int do_read();
-  int do_write();
+  std::expected<void, Error> do_read();
+  std::expected<void, Error> do_write();
 
   // low-level I/O callback functions called by do_read/do_write
-  int connected();
-  int read_clear();
-  int write_clear();
-  int tls_handshake();
-  int read_tls();
-  int write_tls();
+  std::expected<void, Error> connected();
+  std::expected<void, Error> read_clear();
+  std::expected<void, Error> write_clear();
+  std::expected<void, Error> tls_handshake();
+  std::expected<void, Error> read_tls();
+  std::expected<void, Error> write_tls();
 
-  int on_read(std::span<const uint8_t> data);
-  int on_write();
+  std::expected<void, Error> on_read(std::span<const uint8_t> data);
+  std::expected<void, Error> on_write();
 
-  int connection_made();
+  std::expected<void, Error> connection_made();
 
   void on_request(int64_t stream_id);
   void on_header(int64_t stream_id, std::span<const uint8_t> name,
@@ -541,8 +539,8 @@ struct Client {
   int quic_init(const sockaddr *local_addr, socklen_t local_addrlen,
                 const sockaddr *remote_addr, socklen_t remote_addrlen);
   void quic_free();
-  int read_quic();
-  int write_quic();
+  std::expected<void, Error> read_quic();
+  std::expected<void, Error> write_quic();
   ngtcp2_ssize write_quic_pkt(ngtcp2_path *path, ngtcp2_pkt_info *pi,
                               std::span<uint8_t> dest, ngtcp2_tstamp ts);
   std::span<const uint8_t> write_udp(const sockaddr *addr, socklen_t addrlen,
