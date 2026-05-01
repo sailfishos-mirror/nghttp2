@@ -71,6 +71,7 @@
 #include <initializer_list>
 #include <random>
 #include <span>
+#include <expected>
 
 #include "ssl_compat.h"
 
@@ -119,6 +120,7 @@
 #include "template.h"
 #include "allocator.h"
 #include "xsi_strerror.h"
+#include "errors.h"
 
 extern char **environ;
 
@@ -366,7 +368,7 @@ void worker_process_kill(int signum, struct ev_loop *loop) {
 } // namespace
 
 namespace {
-int save_pid() {
+std::expected<void, Error> save_pid() {
   std::array<char, STRERROR_BUFSIZE> errbuf;
   auto config = get_config();
 
@@ -388,7 +390,7 @@ int save_pid() {
     auto error = errno;
     Log{ERROR} << "Could not save PID to file " << pid_file << ": "
                << xsi_strerror(error, errbuf.data(), errbuf.size());
-    return -1;
+    return std::unexpected{Error::LIBC};
   }
 
   auto content = util::utos(as_unsigned(config->pid)) + '\n';
@@ -397,14 +399,14 @@ int save_pid() {
     auto error = errno;
     Log{ERROR} << "Could not save PID to file " << pid_file << ": "
                << xsi_strerror(error, errbuf.data(), errbuf.size());
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
 
   if (fsync(fd) == -1) {
     auto error = errno;
     Log{ERROR} << "Could not save PID to file " << pid_file << ": "
                << xsi_strerror(error, errbuf.data(), errbuf.size());
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
 
   close(fd);
@@ -416,7 +418,7 @@ int save_pid() {
 
     unlink(temp_path);
 
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
 
   if (config->uid != 0) {
@@ -427,7 +429,7 @@ int save_pid() {
     }
   }
 
-  return 0;
+  return {};
 }
 } // namespace
 
@@ -691,8 +693,9 @@ void worker_process_child_cb(struct ev_loop *loop, ev_child *w, int revents) {
 } // namespace
 
 namespace {
-int create_unix_domain_server_socket(
-  UpstreamAddr &faddr, std::vector<InheritedUNIXDomainAddr> &iaddrs) {
+std::expected<void, Error>
+create_unix_domain_server_socket(UpstreamAddr &faddr,
+                                 std::vector<InheritedUNIXDomainAddr> &iaddrs) {
   std::array<char, STRERROR_BUFSIZE> errbuf;
   auto found = std::ranges::find_if(iaddrs, [&faddr](const auto &ia) {
     return !ia.used && ia.path == faddr.host;
@@ -705,7 +708,7 @@ int create_unix_domain_server_socket(
     faddr.fd = (*found).fd;
     faddr.hostport = "localhost"sv;
 
-    return 0;
+    return {};
   }
 
 #ifdef SOCK_NONBLOCK
@@ -714,7 +717,7 @@ int create_unix_domain_server_socket(
     auto error = errno;
     Log{FATAL} << "socket() syscall failed: "
                << xsi_strerror(error, errbuf.data(), errbuf.size());
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
 #else  // !defined(SOCK_NONBLOCK)
   auto fd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -722,7 +725,7 @@ int create_unix_domain_server_socket(
     auto error = errno;
     Log{FATAL} << "socket() syscall failed: "
                << xsi_strerror(error, errbuf.data(), errbuf.size());
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
   util::make_socket_nonblocking(fd);
 #endif // !defined(SOCK_NONBLOCK)
@@ -733,7 +736,7 @@ int create_unix_domain_server_socket(
     Log{FATAL} << "Failed to set SO_REUSEADDR option to listener socket: "
                << xsi_strerror(error, errbuf.data(), errbuf.size());
     close(fd);
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
 
   Address addr;
@@ -743,7 +746,7 @@ int create_unix_domain_server_socket(
     Log{FATAL} << "UNIX domain socket path " << faddr.host << " is too long > "
                << sizeof(unaddr.sun_path);
     close(fd);
-    return -1;
+    return std::unexpected{Error::INTERNAL};
   }
   // copy path including terminal NULL
   std::ranges::copy_n(faddr.host.data(), as_signed(faddr.host.size() + 1),
@@ -758,7 +761,7 @@ int create_unix_domain_server_socket(
     Log{FATAL} << "Failed to bind UNIX domain socket: "
                << xsi_strerror(error, errbuf.data(), errbuf.size());
     close(fd);
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
 
   auto &listenerconf = get_config()->conn.listener;
@@ -768,7 +771,7 @@ int create_unix_domain_server_socket(
     Log{FATAL} << "Failed to listen to UNIX domain socket: "
                << xsi_strerror(error, errbuf.data(), errbuf.size());
     close(fd);
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
 
   Log{NOTICE} << "Listening on UNIX domain socket " << faddr.host
@@ -777,7 +780,7 @@ int create_unix_domain_server_socket(
   faddr.fd = fd;
   faddr.hostport = "localhost"sv;
 
-  return 0;
+  return {};
 }
 } // namespace
 
@@ -887,10 +890,10 @@ void close_unused_inherited_addr(
 namespace {
 // Returns the PID of the original main process from environment
 // variable ENV_ORIG_PID.
-pid_t get_orig_pid_from_env() {
+std::expected<pid_t, Error> get_orig_pid_from_env() {
   auto s = getenv(ENV_ORIG_PID.data());
   if (s == nullptr) {
-    return -1;
+    return std::unexpected{Error::ENTITY_NOT_FOUND};
   }
   return static_cast<pid_t>(util::parse_uint(s).value_or(-1));
 }
@@ -987,7 +990,7 @@ get_inherited_quic_lingering_worker_process_from_env() {
 #endif // defined(ENABLE_HTTP3)
 
 namespace {
-int create_unix_domain_listener_socket(
+std::expected<void, Error> create_unix_domain_listener_socket(
   Config *config, std::vector<InheritedUNIXDomainAddr> &iaddrs) {
   std::array<char, STRERROR_BUFSIZE> errbuf;
   auto &listenerconf = config->conn.listener;
@@ -997,8 +1000,8 @@ int create_unix_domain_listener_socket(
       continue;
     }
 
-    if (create_unix_domain_server_socket(addr, iaddrs) != 0) {
-      return -1;
+    if (auto rv = create_unix_domain_server_socket(addr, iaddrs); !rv) {
+      return rv;
     }
 
     if (config->uid != 0) {
@@ -1013,17 +1016,17 @@ int create_unix_domain_listener_socket(
     }
   }
 
-  return 0;
+  return {};
 }
 } // namespace
 
 namespace {
-int call_daemon() {
+std::expected<void, Error> call_daemon() {
 #ifdef HAVE_LIBSYSTEMD
   if (sd_booted() && (getenv("NOTIFY_SOCKET") != nullptr)) {
     Log{NOTICE} << "Daemonising disabled under systemd";
     chdir("/");
-    return 0;
+    return {};
   }
 #endif // defined(HAVE_LIBSYSTEMD)
   return util::daemonize(0, 0);
@@ -1033,9 +1036,11 @@ int call_daemon() {
 namespace {
 // Opens IPC socket used to communicate with worker proess.  The
 // communication is unidirectional; that is main process sends
-// messages to the worker process.  On success, ipc_fd[0] is for
-// reading, and ipc_fd[1] for writing, just like pipe(2).
-int create_ipc_socket(std::span<int, 2> ipc_fd) {
+// messages to the worker process.  On success, it returns an array
+// containing file descriptor for reading and writing, just like
+// pipe(2).
+std::expected<std::array<int, 2>, Error> create_ipc_socket() {
+  std::array<int, 2> ipc_fd;
   std::array<char, STRERROR_BUFSIZE> errbuf;
   int rv;
 
@@ -1044,7 +1049,7 @@ int create_ipc_socket(std::span<int, 2> ipc_fd) {
     auto error = errno;
     Log{WARN} << "Failed to create pipe to communicate worker process: "
               << xsi_strerror(error, errbuf.data(), errbuf.size());
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
 
   for (auto fd : ipc_fd) {
@@ -1052,12 +1057,14 @@ int create_ipc_socket(std::span<int, 2> ipc_fd) {
     util::make_socket_closeonexec(fd);
   }
 
-  return 0;
+  return ipc_fd;
 }
 } // namespace
 
 namespace {
-int create_worker_process_ready_ipc_socket(std::span<int, 2> ipc_fd) {
+std::expected<std::array<int, 2>, Error>
+create_worker_process_ready_ipc_socket() {
+  std::array<int, 2> ipc_fd;
   std::array<char, STRERROR_BUFSIZE> errbuf;
   int rv;
 
@@ -1067,7 +1074,7 @@ int create_worker_process_ready_ipc_socket(std::span<int, 2> ipc_fd) {
     Log{WARN} << "Failed to create socket pair to communicate worker process "
                  "readiness: "
               << xsi_strerror(error, errbuf.data(), errbuf.size());
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
 
   for (auto fd : ipc_fd) {
@@ -1076,13 +1083,14 @@ int create_worker_process_ready_ipc_socket(std::span<int, 2> ipc_fd) {
 
   util::make_socket_nonblocking(ipc_fd[0]);
 
-  return 0;
+  return ipc_fd;
 }
 } // namespace
 
 #ifdef ENABLE_HTTP3
 namespace {
-int create_quic_ipc_socket(std::span<int, 2> quic_ipc_fd) {
+std::expected<std::array<int, 2>, Error> create_quic_ipc_socket() {
+  std::array<int, 2> quic_ipc_fd;
   std::array<char, STRERROR_BUFSIZE> errbuf;
   int rv;
 
@@ -1091,20 +1099,20 @@ int create_quic_ipc_socket(std::span<int, 2> quic_ipc_fd) {
     auto error = errno;
     Log{WARN} << "Failed to create socket pair to communicate worker process: "
               << xsi_strerror(error, errbuf.data(), errbuf.size());
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
 
   for (auto fd : quic_ipc_fd) {
     util::make_socket_nonblocking(fd);
   }
 
-  return 0;
+  return quic_ipc_fd;
 }
 } // namespace
 
 namespace {
-int generate_worker_id(std::vector<WorkerID> &worker_ids, uint16_t wp_seq,
-                       const Config *config) {
+std::vector<WorkerID> generate_worker_id(uint16_t wp_seq,
+                                         const Config *config) {
   auto &apiconf = config->api;
   auto &quicconf = config->quic;
 
@@ -1122,17 +1130,20 @@ int generate_worker_id(std::vector<WorkerID> &worker_ids, uint16_t wp_seq,
     }
   }
 
-  worker_ids.resize(num_wid);
+  std::vector<WorkerID> worker_ids;
+  worker_ids.reserve(num_wid);
 
   uint16_t idx = 0;
 
-  for (auto &wid : worker_ids) {
-    wid.server = quicconf.server_id;
-    wid.worker_process = wp_seq;
-    wid.thread = idx++;
+  for (auto i = 0UZ; i < num_wid; ++i) {
+    worker_ids.emplace_back(WorkerID{
+      .server = quicconf.server_id,
+      .worker_process = wp_seq,
+      .thread = idx++,
+    });
   }
 
-  return 0;
+  return worker_ids;
 }
 } // namespace
 
@@ -1276,42 +1287,43 @@ void shutdown_worker_process_ready_ipc_watcher(struct ev_loop *loop) {
 }
 } // namespace
 
-namespace {
-// Creates worker process, and returns PID of worker process.  On
-// success, file descriptor for IPC (send only) is assigned to
-// |main_ipc_fd|.  In child process, we will close file descriptors
-// which are inherited from previous configuration/process, but not
-// used in the current configuration.
-pid_t fork_worker_process(int &main_ipc_fd
+struct WorkerProcessForkResult {
+  pid_t pid;
+  int ipc_fd;
 #ifdef ENABLE_HTTP3
-                          ,
-                          int &wp_quic_ipc_fd
+  int quic_ipc_fd;
 #endif // defined(ENABLE_HTTP3)
-                          ,
-                          const std::vector<InheritedUNIXDomainAddr> &iaddrs
+};
+
+namespace {
+// Creates worker process, and returns PID of worker process and a
+// file descriptor for IPC (send only).  In child process, we will
+// close file descriptors which are inherited from previous
+// configuration/process, but not used in the current configuration.
+std::expected<WorkerProcessForkResult, Error>
+fork_worker_process(const std::vector<InheritedUNIXDomainAddr> &iaddrs
 #ifdef ENABLE_HTTP3
-                          ,
-                          std::vector<WorkerID> worker_ids,
-                          std::vector<QUICLingeringWorkerProcess> quic_lwps
+                    ,
+                    std::vector<WorkerID> worker_ids,
+                    std::vector<QUICLingeringWorkerProcess> quic_lwps
 #endif // defined(ENABLE_HTTP3)
 ) {
   std::array<char, STRERROR_BUFSIZE> errbuf;
-  int rv;
 
-  std::array<int, 2> ipc_fd;
-
-  rv = create_ipc_socket(ipc_fd);
-  if (rv != 0) {
-    return -1;
+  auto maybe_ipc_fd = create_ipc_socket();
+  if (!maybe_ipc_fd) {
+    return std::unexpected{maybe_ipc_fd.error()};
   }
+
+  const auto &ipc_fd = *maybe_ipc_fd;
 
 #ifdef ENABLE_HTTP3
-  std::array<int, 2> quic_ipc_fd;
-
-  rv = create_quic_ipc_socket(quic_ipc_fd);
-  if (rv != 0) {
-    return -1;
+  auto maybe_quic_ipc_fd = create_quic_ipc_socket();
+  if (!maybe_quic_ipc_fd) {
+    return std::unexpected{maybe_quic_ipc_fd.error()};
   }
+
+  const auto &quic_ipc_fd = *maybe_quic_ipc_fd;
 #endif // defined(ENABLE_HTTP3)
 
   auto maybe_oldset = shrpx_signal_block_all();
@@ -1323,7 +1335,7 @@ pid_t fork_worker_process(int &main_ipc_fd
     close(ipc_fd[0]);
     close(ipc_fd[1]);
 
-    return -1;
+    return std::unexpected{maybe_oldset.error()};
   }
 
   const auto &oldset = *maybe_oldset;
@@ -1448,7 +1460,7 @@ pid_t fork_worker_process(int &main_ipc_fd
     close(quic_ipc_fd[1]);
 #endif // defined(ENABLE_HTTP3)
 
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
 
   close(ipc_fd[0]);
@@ -1456,19 +1468,20 @@ pid_t fork_worker_process(int &main_ipc_fd
   close(quic_ipc_fd[0]);
 #endif // defined(ENABLE_HTTP3)
 
-  main_ipc_fd = ipc_fd[1];
-#ifdef ENABLE_HTTP3
-  wp_quic_ipc_fd = quic_ipc_fd[1];
-#endif // ENABLE_HTTP3
-
   Log{NOTICE} << "Worker process [" << pid << "] spawned";
 
-  return pid;
+  return WorkerProcessForkResult{
+    .pid = pid,
+    .ipc_fd = ipc_fd[1],
+#ifdef ENABLE_HTTP3
+    .quic_ipc_fd = quic_ipc_fd[1],
+#endif // ENABLE_HTTP3
+  };
 }
 } // namespace
 
 namespace {
-int event_loop() {
+std::expected<void, Error> event_loop() {
   std::array<char, STRERROR_BUFSIZE> errbuf;
 
   shrpx_signal_set_main_proc_ign_handler();
@@ -1476,11 +1489,11 @@ int event_loop() {
   auto config = mod_config();
 
   if (config->daemon) {
-    if (call_daemon() == -1) {
+    if (auto rv = call_daemon(); !rv) {
       auto error = errno;
       Log{FATAL} << "Failed to daemonize: "
                  << xsi_strerror(error, errbuf.data(), errbuf.size());
-      return -1;
+      return rv;
     }
 
     // We get new PID after successful daemon().
@@ -1497,14 +1510,14 @@ int event_loop() {
   {
     auto iaddrs = get_inherited_unix_domain_socket_from_env(config);
 
-    if (create_unix_domain_listener_socket(config, iaddrs) != 0) {
-      return -1;
+    if (auto rv = create_unix_domain_listener_socket(config, iaddrs); !rv) {
+      return rv;
     }
 
     close_unused_inherited_addr(iaddrs);
   }
 
-  orig_pid = get_orig_pid_from_env();
+  orig_pid = get_orig_pid_from_env().value_or(-1);
 
 #ifdef ENABLE_HTTP3
   inherited_quic_lingering_worker_processes =
@@ -1513,51 +1526,45 @@ int event_loop() {
 
   auto loop = ev_default_loop(config->ev_loop_flags);
 
-  int ipc_fd = 0;
 #ifdef ENABLE_HTTP3
-  int quic_ipc_fd = 0;
-
   auto quic_lwps = collect_quic_lingering_worker_processes();
 
-  std::vector<WorkerID> worker_ids;
-
-  if (generate_worker_id(worker_ids, worker_process_seq, config) != 0) {
-    return -1;
-  }
+  auto worker_ids = generate_worker_id(worker_process_seq, config);
 #endif // ENABLE_HTTP3
 
   if (!config->single_process) {
     start_signal_watchers(loop);
   }
 
-  create_worker_process_ready_ipc_socket(worker_process_ready_ipc_fd);
+  if (auto maybe_wp_ready_ipc_fd = create_worker_process_ready_ipc_socket();
+      !maybe_wp_ready_ipc_fd) {
+    return std::unexpected{maybe_wp_ready_ipc_fd.error()};
+  } else {
+    worker_process_ready_ipc_fd = *maybe_wp_ready_ipc_fd;
+  }
+
   start_worker_process_ready_ipc_watcher(loop);
 
-  auto pid = fork_worker_process(ipc_fd
+  auto maybe_fork_res = fork_worker_process({}
 #ifdef ENABLE_HTTP3
-                                 ,
-                                 quic_ipc_fd
-#endif // ENABLE_HTTP3
-                                 ,
-                                 {}
-#ifdef ENABLE_HTTP3
-                                 ,
-                                 worker_ids, std::move(quic_lwps)
+                                            ,
+                                            worker_ids, std::move(quic_lwps)
 #endif // ENABLE_HTTP3
   );
-
-  if (pid == -1) {
-    return -1;
+  if (!maybe_fork_res) {
+    return std::unexpected{maybe_fork_res.error()};
   }
+
+  const auto &fork_res = *maybe_fork_res;
 
   ev_timer_init(&worker_process_grace_period_timer,
                 worker_process_grace_period_timercb, 0., 0.);
 
   worker_process_add(std::make_unique<WorkerProcess>(
-    loop, pid, ipc_fd
+    loop, fork_res.pid, fork_res.ipc_fd
 #ifdef ENABLE_HTTP3
     ,
-    quic_ipc_fd, std::move(worker_ids), worker_process_seq++
+    fork_res.quic_ipc_fd, std::move(worker_ids), worker_process_seq++
 #endif // ENABLE_HTTP3
     ));
 
@@ -1582,7 +1589,7 @@ int event_loop() {
     shutdown_signal_watchers(loop);
   }
 
-  return 0;
+  return {};
 }
 } // namespace
 
@@ -3270,7 +3277,7 @@ Misc:
 } // namespace
 
 namespace {
-int process_options(
+std::expected<void, Error> process_options(
   Config *config,
   std::vector<std::pair<std::string_view, std::string_view>> &cmdcfgs) {
   std::array<char, STRERROR_BUFSIZE> errbuf;
@@ -3278,10 +3285,11 @@ int process_options(
   if (conf_exists(config->conf_path.data())) {
     Log{NOTICE} << "Loading configuration from " << config->conf_path;
     std::unordered_set<std::string_view> include_set;
-    if (!load_config(config, config->conf_path.data(), include_set,
-                     pattern_addr_indexer)) {
+    if (auto rv = load_config(config, config->conf_path.data(), include_set,
+                              pattern_addr_indexer);
+        !rv) {
       Log{FATAL} << "Failed to load configuration from " << config->conf_path;
-      return -1;
+      return rv;
     }
     assert(include_set.empty());
   }
@@ -3293,10 +3301,11 @@ int process_options(
     std::unordered_set<std::string_view> include_set;
 
     for (auto &p : cmdcfgs) {
-      if (!parse_config(config, p.first, p.second, include_set,
-                        pattern_addr_indexer)) {
+      if (auto rv = parse_config(config, p.first, p.second, include_set,
+                                 pattern_addr_indexer);
+          !rv) {
         Log{FATAL} << "Failed to parse command-line argument.";
-        return -1;
+        return rv;
       }
     }
 
@@ -3312,9 +3321,9 @@ int process_options(
             loggingconf.syslog_facility);
   }
 
-  if (!reopen_log_files(config->logging)) {
+  if (auto rv = reopen_log_files(config->logging); !rv) {
     Log{FATAL} << "Failed to open log file";
-    return -1;
+    return rv;
   }
 
   redirect_stderr_to_errorlog(loggingconf);
@@ -3350,7 +3359,7 @@ int process_options(
       if (!maybe_f) {
         Log{FATAL} << "Failed to open http2 upstream request header file: "
                    << path;
-        return -1;
+        return std::unexpected{maybe_f.error()};
       }
 
       dumpconf.request_header = *maybe_f;
@@ -3372,7 +3381,7 @@ int process_options(
       if (!maybe_f) {
         Log{FATAL} << "Failed to open http2 upstream response header file: "
                    << path;
-        return -1;
+        return std::unexpected{maybe_f.error()};
       }
 
       dumpconf.response_header = *maybe_f;
@@ -3403,11 +3412,12 @@ int process_options(
   if (tlsconf.min_proto_version > tlsconf.max_proto_version) {
     Log{ERROR} << "tls-max-proto-version must be equal to or larger than "
                   "tls-min-proto-version";
-    return -1;
+    return std::unexpected{Error::INVALID_CONFIG};
   }
 
-  if (!tls::set_alpn_prefs(tlsconf.alpn_prefs, tlsconf.alpn_list)) {
-    return -1;
+  if (auto rv = tls::set_alpn_prefs(tlsconf.alpn_prefs, tlsconf.alpn_list);
+      !rv) {
+    return rv;
   }
 
   auto &listenerconf = config->conn.listener;
@@ -3435,12 +3445,13 @@ int process_options(
     Log{FATAL} << "TLS private key and certificate files are required.  "
                   "Specify them in command-line, or in configuration file "
                   "using private-key-file and certificate-file options.";
-    return -1;
+    return std::unexpected{Error::INVALID_CONFIG};
   }
 
-  if (!configure_downstream_group(config, config->http2_proxy, false,
-                                  tlsconf)) {
-    return -1;
+  if (auto rv =
+        configure_downstream_group(config, config->http2_proxy, false, tlsconf);
+      !rv) {
+    return rv;
   }
 
   std::array<char, util::max_hostport> hostport_buf;
@@ -3453,7 +3464,7 @@ int process_options(
       resolve_hostname(proxy.host.data(), proxy.port, AF_UNSPEC);
     if (!maybe_addr) {
       Log{FATAL} << "Resolving backend HTTP proxy address failed: " << hostport;
-      return -1;
+      return std::unexpected{maybe_addr.error()};
     }
 
     proxy.addr = std::move(*maybe_addr);
@@ -3473,7 +3484,7 @@ int process_options(
       if (!maybe_addr) {
         Log{FATAL} << "Resolving memcached address for TLS ticket key failed: "
                    << hostport;
-        return -1;
+        return std::unexpected{maybe_addr.error()};
       }
 
       memcachedconf.addr = std::move(*maybe_addr);
@@ -3545,7 +3556,7 @@ int process_options(
       config->balloc, config->http.http2_altsvcs);
   }
 
-  return 0;
+  return {};
 }
 } // namespace
 
@@ -3575,8 +3586,6 @@ void close_not_inherited_fd(
 
 namespace {
 void reload_config() {
-  int rv;
-
   Log{NOTICE} << "Reloading configuration";
 
   auto cur_config = mod_config();
@@ -3592,8 +3601,7 @@ void reload_config() {
   new_config->ev_loop_flags = cur_config->ev_loop_flags;
   new_config->config_revision = cur_config->config_revision + 1;
 
-  rv = process_options(new_config.get(), suconfig.cmdcfgs);
-  if (rv != 0) {
+  if (!process_options(new_config.get(), suconfig.cmdcfgs)) {
     Log{ERROR} << "Failed to process new configuration";
     return;
   }
@@ -3601,7 +3609,7 @@ void reload_config() {
   auto iaddrs = get_inherited_unix_domain_socket_from_config(new_config->balloc,
                                                              cur_config);
 
-  if (create_unix_domain_listener_socket(new_config.get(), iaddrs) != 0) {
+  if (!create_unix_domain_listener_socket(new_config.get(), iaddrs)) {
     close_not_inherited_fd(new_config.get(), iaddrs);
     return;
   }
@@ -3610,19 +3618,10 @@ void reload_config() {
   // already created first default loop.
   auto loop = ev_default_loop(new_config->ev_loop_flags);
 
-  int ipc_fd = 0;
 #ifdef ENABLE_HTTP3
-  int quic_ipc_fd = 0;
-
   auto quic_lwps = collect_quic_lingering_worker_processes();
 
-  std::vector<WorkerID> worker_ids;
-
-  if (generate_worker_id(worker_ids, worker_process_seq, new_config.get()) !=
-      0) {
-    close_not_inherited_fd(new_config.get(), iaddrs);
-    return;
-  }
+  auto worker_ids = generate_worker_id(worker_process_seq, new_config.get());
 #endif // ENABLE_HTTP3
 
   // fork_worker_process and forked child process assumes new
@@ -3630,21 +3629,14 @@ void reload_config() {
 
   auto old_config = replace_config(std::move(new_config));
 
-  auto pid = fork_worker_process(ipc_fd
+  auto maybe_fork_res = fork_worker_process(iaddrs
 #ifdef ENABLE_HTTP3
-                                 ,
-                                 quic_ipc_fd
-#endif // ENABLE_HTTP3
-
-                                 ,
-                                 iaddrs
-#ifdef ENABLE_HTTP3
-                                 ,
-                                 worker_ids, std::move(quic_lwps)
+                                            ,
+                                            worker_ids, std::move(quic_lwps)
 #endif // ENABLE_HTTP3
   );
 
-  if (pid == -1) {
+  if (!maybe_fork_res) {
     Log{ERROR} << "Failed to process new configuration";
 
     new_config = replace_config(std::move(old_config));
@@ -3653,13 +3645,15 @@ void reload_config() {
     return;
   }
 
+  const auto &fork_res = *maybe_fork_res;
+
   close_unused_inherited_addr(iaddrs);
 
   worker_process_add(std::make_unique<WorkerProcess>(
-    loop, pid, ipc_fd
+    loop, fork_res.pid, fork_res.ipc_fd
 #ifdef ENABLE_HTTP3
     ,
-    quic_ipc_fd, std::move(worker_ids), worker_process_seq++
+    fork_res.quic_ipc_fd, std::move(worker_ids), worker_process_seq++
 #endif // ENABLE_HTTP3
     ));
 
@@ -3672,7 +3666,6 @@ void reload_config() {
 } // namespace
 
 int main(int argc, char **argv) {
-  int rv;
   std::array<char, STRERROR_BUFSIZE> errbuf;
 
 #ifdef HAVE_LIBBPF
@@ -4958,12 +4951,11 @@ int main(int argc, char **argv) {
 #  endif // defined(HAVE_LIBNGTCP2_CRYPTO_OSSL)
 #endif   // defined(ENABLE_HTTP3)
 
-  rv = process_options(mod_config(), cmdcfgs);
-  if (rv != 0) {
+  if (!process_options(mod_config(), cmdcfgs)) {
     return -1;
   }
 
-  if (event_loop() != 0) {
+  if (!event_loop()) {
     return -1;
   }
 

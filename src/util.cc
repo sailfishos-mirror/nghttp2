@@ -1751,48 +1751,56 @@ std::mt19937 make_mt19937() {
   return std::mt19937(rd());
 }
 
-int daemonize(int nochdir, int noclose) {
+std::expected<void, Error> daemonize(int nochdir, int noclose) {
 #ifdef __APPLE__
   pid_t pid;
   pid = fork();
   if (pid == -1) {
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   } else if (pid > 0) {
     _exit(EXIT_SUCCESS);
   }
   if (setsid() == -1) {
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   }
   pid = fork();
   if (pid == -1) {
-    return -1;
+    return std::unexpected{Error::SYSCALL};
   } else if (pid > 0) {
     _exit(EXIT_SUCCESS);
   }
   if (nochdir == 0) {
     if (chdir("/") == -1) {
-      return -1;
+      return std::unexpected{Error::SYSCALL};
     }
   }
   if (noclose == 0) {
     if (freopen("/dev/null", "r", stdin) == nullptr) {
-      return -1;
+      return std::unexpected{Error::LIBC};
     }
     if (freopen("/dev/null", "w", stdout) == nullptr) {
-      return -1;
+      return std::unexpected{Error::LIBC};
     }
     if (freopen("/dev/null", "w", stderr) == nullptr) {
-      return -1;
+      return std::unexpected{Error::LIBC};
     }
   }
-  return 0;
+  return {};
 #elif defined(__sgi)
   // TODO nochdir and noclose are ignored.  _daemonize is called with
   // hard-coded zeros to preserve original behavior due to lack of a
   // test environment.
-  return _daemonize(0, 0, 0, 0);
+  if (_daemonize(0, 0, 0, 0) != 0) {
+    return std::unexpected{Error::LIBC};
+  }
+
+  return {};
 #else  // !defined(__APPLE__) && !defined(__sgi)
-  return daemon(nochdir, noclose);
+  if (daemon(nochdir, noclose) != 0) {
+    return std::unexpected{Error::LIBC};
+  }
+
+  return {};
 #endif // !defined(__APPLE__) && !defined(__sgi)
 }
 
