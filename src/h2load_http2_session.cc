@@ -253,9 +253,9 @@ void Http2Session::on_connect() {
   client_->signal_write();
 }
 
-int Http2Session::submit_request() {
+std::expected<void, Error> Http2Session::submit_request() {
   if (nghttp2_session_check_request_allowed(session_) == 0) {
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   auto config = client_->worker->config;
@@ -271,44 +271,45 @@ int Http2Session::submit_request() {
     nghttp2_submit_request2(session_, nullptr, nva.data(), nva.size(),
                             config->data_fd == -1 ? nullptr : &prd, nullptr);
   if (stream_id < 0) {
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   client_->on_request(stream_id);
 
-  return 0;
+  return {};
 }
 
-int Http2Session::on_read(std::span<const uint8_t> data) {
+std::expected<void, Error>
+Http2Session::on_read(std::span<const uint8_t> data) {
   auto rv = nghttp2_session_mem_recv2(session_, data.data(), data.size());
   if (rv < 0) {
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   assert(static_cast<size_t>(rv) == data.size());
 
   if (nghttp2_session_want_read(session_) == 0 &&
       nghttp2_session_want_write(session_) == 0 && client_->wb.rleft() == 0) {
-    return -1;
+    return std::unexpected{Error::DONE};
   }
 
   client_->signal_write();
 
-  return 0;
+  return {};
 }
 
-int Http2Session::on_write() {
+std::expected<void, Error> Http2Session::on_write() {
   auto rv = nghttp2_session_send(session_);
   if (rv != 0) {
-    return -1;
+    return std::unexpected{Error::HTTP2};
   }
 
   if (nghttp2_session_want_read(session_) == 0 &&
       nghttp2_session_want_write(session_) == 0 && client_->wb.rleft() == 0) {
-    return -1;
+    return std::unexpected{Error::DONE};
   }
 
-  return 0;
+  return {};
 }
 
 void Http2Session::terminate() {

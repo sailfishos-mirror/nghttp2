@@ -396,7 +396,7 @@ struct Client {
   std::unique_ptr<Session> session;
   ev_io wev;
   ev_io rev;
-  std::function<int(Client &)> readfn, writefn;
+  std::function<std::expected<void, Error>(Client &)> readfn, writefn;
   Worker *worker;
   SSL *ssl;
 #ifdef ENABLE_HTTP3
@@ -469,48 +469,46 @@ struct Client {
   // and it is only used if --rps is given.
   size_t rps_req_inflight;
 
-  enum { ERR_CONNECT_FAIL = -100 };
-
   Client(uint32_t id, Worker *worker, size_t req_todo);
   ~Client();
-  int make_socket(addrinfo *addr);
-  int connect();
+  std::expected<void, Error> make_socket(addrinfo *addr);
+  std::expected<void, Error> connect();
   void disconnect();
   void fail();
   // Call this function when do_read() returns -1.  This function
   // tries to connect to the remote host again if it is requested.  If
-  // so, this function returns 0, and this object should be retained.
-  // Otherwise, this function returns -1, and this object should be
+  // so, this function succeeds, and this object should be retained.
+  // Otherwise, this function returns error, and this object should be
   // deleted.
-  int try_again_or_fail();
+  std::expected<void, Error> try_again_or_fail();
   void timeout();
   void restart_timeout();
-  int submit_request();
+  std::expected<void, Error> submit_request();
   void process_request_failure();
   void process_timedout_streams();
   void process_abandoned_streams();
   void report_tls_info();
   void report_app_info();
-  int terminate_session();
+  std::expected<void, Error> terminate_session();
   // Asks client to create new connection, instead of just fail.
   void try_new_connection();
   uint32_t get_id() const;
 
-  int do_read();
-  int do_write();
+  std::expected<void, Error> do_read();
+  std::expected<void, Error> do_write();
 
   // low-level I/O callback functions called by do_read/do_write
-  int connected();
-  int read_clear();
-  int write_clear();
-  int tls_handshake();
-  int read_tls();
-  int write_tls();
+  std::expected<void, Error> connected();
+  std::expected<void, Error> read_clear();
+  std::expected<void, Error> write_clear();
+  std::expected<void, Error> tls_handshake();
+  std::expected<void, Error> read_tls();
+  std::expected<void, Error> write_tls();
 
-  int on_read(std::span<const uint8_t> data);
-  int on_write();
+  std::expected<void, Error> on_read(std::span<const uint8_t> data);
+  std::expected<void, Error> on_write();
 
-  int connection_made();
+  std::expected<void, Error> connection_made();
 
   void on_request(int64_t stream_id);
   void on_header(int64_t stream_id, std::span<const uint8_t> name,
@@ -538,11 +536,13 @@ struct Client {
 
 #ifdef ENABLE_HTTP3
   // QUIC
-  int quic_init(const sockaddr *local_addr, socklen_t local_addrlen,
-                const sockaddr *remote_addr, socklen_t remote_addrlen);
+  std::expected<void, Error> quic_init(const sockaddr *local_addr,
+                                       socklen_t local_addrlen,
+                                       const sockaddr *remote_addr,
+                                       socklen_t remote_addrlen);
   void quic_free();
-  int read_quic();
-  int write_quic();
+  std::expected<void, Error> read_quic();
+  std::expected<void, Error> write_quic();
   ngtcp2_ssize write_quic_pkt(ngtcp2_path *path, ngtcp2_pkt_info *pi,
                               std::span<uint8_t> dest, ngtcp2_tstamp ts);
   std::span<const uint8_t> write_udp(const sockaddr *addr, socklen_t addrlen,
@@ -552,23 +552,28 @@ struct Client {
                             std::span<const uint8_t> data, size_t gso_size);
   void on_send_blocked(const ngtcp2_addr &remote_addr,
                        std::span<const uint8_t> data, size_t gso_size);
-  int send_blocked_packet();
+  void send_blocked_packet();
   void quic_close_connection();
 
-  int quic_handshake_completed();
-  int quic_recv_stream_data(uint32_t flags, int64_t stream_id,
-                            std::span<const uint8_t> data);
-  int quic_acked_stream_data_offset(int64_t stream_id, size_t datalen);
-  int quic_stream_close(int64_t stream_id, uint64_t app_error_code);
-  int quic_stream_reset(int64_t stream_id, uint64_t app_error_code);
-  int quic_stream_stop_sending(int64_t stream_id, uint64_t app_error_code);
-  int quic_extend_max_local_streams();
-  int quic_extend_max_stream_data(int64_t stream_id);
+  std::expected<void, Error> quic_handshake_completed();
+  std::expected<void, Error>
+  quic_recv_stream_data(uint32_t flags, int64_t stream_id,
+                        std::span<const uint8_t> data);
+  std::expected<void, Error> quic_acked_stream_data_offset(int64_t stream_id,
+                                                           size_t datalen);
+  std::expected<void, Error> quic_stream_close(int64_t stream_id,
+                                               uint64_t app_error_code);
+  std::expected<void, Error> quic_stream_reset(int64_t stream_id,
+                                               uint64_t app_error_code);
+  std::expected<void, Error> quic_stream_stop_sending(int64_t stream_id,
+                                                      uint64_t app_error_code);
+  std::expected<void, Error> quic_extend_max_local_streams();
+  std::expected<void, Error> quic_extend_max_stream_data(int64_t stream_id);
 
-  int quic_pkt_timeout();
+  std::expected<void, Error> quic_pkt_timeout();
   void quic_restart_pkt_timer();
   void quic_write_qlog(const void *data, size_t datalen);
-  int quic_make_http3_session();
+  std::expected<void, Error> quic_make_http3_session();
 #endif // defined(ENABLE_HTTP3)
 };
 
