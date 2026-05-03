@@ -1419,8 +1419,7 @@ nghttp2_ssize downstream_data_read_callback(nghttp2_session *session,
 
   auto buffer = upstream->get_response_buf();
 
-  if (max_buffer_size <
-      std::min(nread, static_cast<size_t>(256)) + 9 + buffer->rleft()) {
+  if (max_buffer_size < std::min(nread, 256UZ) + 9 + buffer->rleft()) {
     if (log_enabled(INFO)) {
       Log{INFO, upstream} << "Buffer is almost full.  Skip write DATA";
     }
