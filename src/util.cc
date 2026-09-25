@@ -75,7 +75,7 @@
 #  include <openssl/rand.h>
 #endif // !defined(NGHTTP2_OPENSSL_IS_WOLFSSL)
 
-#include <nghttp2/nghttp2.h>
+#include <nghttp2v2/nghttp2.h>
 
 #include "timegm.h"
 #include "tls.h"
