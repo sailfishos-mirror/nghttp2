@@ -20,8 +20,8 @@
 # LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 # WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-SUBDIRS = lib tests third-party src bpf examples integration-tests \
-	doc contrib
+SUBDIRS = lib tests v2lib v2tests third-party src bpf examples \
+	integration-tests doc contrib
 
 ACLOCAL_AMFLAGS = -I m4
 
@@ -62,4 +62,6 @@ clang-format:
 	test -z $${CLANGFORMAT} && CLANGFORMAT="clang-format"; \
 	$${CLANGFORMAT} -i lib/*.{c,h} lib/includes/nghttp2/*.h \
 	src/*.{c,cc,h} examples/*.c \
-	tests/*.{c,h} bpf/*.c fuzz/*.cc
+	tests/*.{c,h} bpf/*.c fuzz/*.cc \
+	v2lib/includes/nghttp2v2/*.h \
+	v2lib/*.{c,h} v2tests/*.{c,h}

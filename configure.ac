@@ -234,6 +234,8 @@ if [test "x$request_lib_only" = "xyes"]; then
   request_libbpf=no
 fi
 
+AM_CONDITIONAL([ENABLE_SHARED], [ test "x${enable_shared}" = "xyes" ])
+
 if test "x$GCC" = "xyes" -o "x$CC" = "xclang" ; then
   AC_DEFINE([NGHTTP2_NORETURN], [__attribute__((noreturn))], [Hint to the compiler that a function never return])
 else
@@ -1121,6 +1123,19 @@ AC_CHECK_DECLS([CLOCK_MONOTONIC], [], [], [[
 #include <time.h>
 ]])
 
+AC_CHECK_DECLS([be64toh], [], [], [[
+#ifdef HAVE_ENDIAN_H
+#  include <endian.h>
+#endif
+#ifdef HAVE_SYS_ENDIAN_H
+#  include <sys/endian.h>
+#endif
+]])
+
+AC_CHECK_DECLS([bswap_64], [], [], [[
+#include <byteswap.h>
+]])
+
 save_CFLAGS=$CFLAGS
 save_CXXFLAGS=$CXXFLAGS
 
@@ -1237,6 +1252,11 @@ AC_CONFIG_FILES([
   lib/includes/nghttp2/nghttp2ver.h
   tests/Makefile
   tests/testdata/Makefile
+  v2lib/Makefile
+  v2lib/libnghttp2v2.pc
+  v2lib/includes/Makefile
+  v2lib/includes/nghttp2v2/version.h
+  v2tests/Makefile
   third-party/Makefile
   src/Makefile
   src/testdata/Makefile

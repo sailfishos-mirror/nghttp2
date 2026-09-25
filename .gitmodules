@@ -11,3 +11,6 @@
 [submodule "third-party/urlparse"]
 	path = third-party/urlparse
 	url = https://github.com/ngtcp2/urlparse
+[submodule "v2lib/sfparse"]
+	path = v2lib/sfparse
+	url = https://github.com/ngtcp2/sfparse
