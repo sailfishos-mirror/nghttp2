@@ -1250,8 +1250,6 @@ AC_CONFIG_FILES([
   lib/libnghttp2.pc
   lib/includes/Makefile
   lib/includes/nghttp2/nghttp2ver.h
-  tests/Makefile
-  tests/testdata/Makefile
   v2lib/Makefile
   v2lib/libnghttp2v2.pc
   v2lib/includes/Makefile
